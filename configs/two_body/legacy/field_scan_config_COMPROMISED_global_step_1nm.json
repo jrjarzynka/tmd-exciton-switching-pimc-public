@@ -1,0 +1,19 @@
+{
+  "separation_nm": 0.60,
+  "screening_length_layer1_nm": 4.479911124019045,
+  "screening_length_layer2_nm": 3.4934510307918494,
+  "kappa_environment": 4.945,
+  "mass_e_m0": 0.58,
+  "mass_h_m0": 0.36,
+  "temperature_K": 20.0,
+  "n_beads": 256,
+  "moire_amplitude_eV": 0.045,
+  "moire_period_nm": 20.0,
+  "shift_values_nm": [0.0, 3.849, 5.774],
+  "field_values_eV_per_nm": [0.0, 0.001, 0.002, 0.003, 0.005, 0.007, 0.010],
+  "n_seeds": 5,
+  "n_steps": 60000,
+  "burn_in": 15000,
+  "sample_every": 20,
+  "output_prefix": "field_scan"
+}

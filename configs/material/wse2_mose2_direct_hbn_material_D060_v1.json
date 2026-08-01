@@ -1,0 +1,32 @@
+{
+  "model_version": "v1.8a-material-specific-BLK",
+  "structure": "hBN_encapsulated_direct_WSe2_MoSe2",
+  "hbn_spacer": false,
+  "electron_layer": "MoSe2",
+  "hole_layer": "WSe2",
+  "electron_mass_m0": null,
+  "hole_mass_m0": null,
+  "reduced_mass_m0": 0.2221,
+  "chi2d_mose2_angstrom": 7.13,
+  "chi2d_wse2_angstrom": 5.56,
+  "screening_length_mose2_nm": 4.479911124019045,
+  "screening_length_wse2_nm": 3.4934510307918494,
+  "screening_length_sum_nm": 7.973362154810894,
+  "dielectric_environment": "symmetric_external_hBN_encapsulation",
+  "epsilon_top": 4.945,
+  "epsilon_bottom": 4.945,
+  "kappa_environment": 4.945,
+  "potential_model": "analytical_bilayer_Keldysh",
+  "parameter_provenance": {
+    "reduced_mass": "Kamban and Pedersen, Scientific Reports 10, 5537 (2020), Table 1: MoSe2/WSe2 mu=0.2221 m0.",
+    "blk_formula": "Kamban and Pedersen, Scientific Reports 10, 5537 (2020), Eq. (5).",
+    "hbn_kappa": "Kamban and Pedersen (2020): effective hBN encapsulation kappa=4.945.",
+    "chi2d": "Zhu et al., Phys. Rev. B 110, 155416 (2024), Table I: chi(MoSe2)=7.13 A, chi(WSe2)=5.56 A.",
+    "screening_conversion": "r0=2*pi*chi2D in vacuum-length convention; chi in angstrom converted to nm."
+  },
+  "mass_note": "The present relative-coordinate Hamiltonian requires only reduced_mass_m0. Layer-resolved electron and hole masses are deliberately left null rather than invented.",
+  "geometry_note": "Direct TMD contact with a natural van der Waals gap. hBN is external encapsulation, not a spacer. D is sensitivity-swept and is not yet a stacking-resolved ab-initio value.",
+  "interlayer_separation_nm": 0.6,
+  "separation_case": "D060",
+  "notes": "Material-specific BLK radial validation at D=0.60 nm; no hBN spacer."
+}

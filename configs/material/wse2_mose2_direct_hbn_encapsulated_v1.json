@@ -1,0 +1,14 @@
+{
+  "model_version": "v1.7-direct-interlayer-baseline",
+  "structure": "hBN_encapsulated_direct_WSe2_MoSe2",
+  "hbn_spacer": false,
+  "electron_layer": "MoSe2",
+  "hole_layer": "WSe2",
+  "reduced_mass_m0": 0.25,
+  "interlayer_separation_nm": 0.60,
+  "single_layer_screening_length_nm": 4.50,
+  "environment_model": "symmetric_encapsulation",
+  "epsilon_env": 4.50,
+  "interface_distance_nm": 0.50,
+  "notes": "Direct WSe2/MoSe2 contact with natural vdW gap and external hBN encapsulation. hBN is above and below the TMD bilayer, not between the electron and hole layers. Parameters follow the symmetric baseline used in Tang et al. (2024), not a final unequal-layer material fit."
+}

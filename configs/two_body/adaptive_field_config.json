@@ -1,0 +1,18 @@
+{
+  "separation_nm": 0.60,
+  "screening_length_layer1_nm": 4.479911124019045,
+  "screening_length_layer2_nm": 3.4934510307918494,
+  "kappa_environment": 4.945,
+  "mass_e_m0": 0.58,
+  "mass_h_m0": 0.36,
+  "temperature_K": 20.0,
+  "n_beads": 256,
+  "moire_amplitude_eV": 0.045,
+  "moire_period_nm": 20.0,
+  "shift_values_nm": [0.0, 3.849, 5.774],
+  "shift_axis": "x",
+  "global_step_nm": 12.0,
+  "local_step_nm": 0.15,
+  "sample_every": 20,
+  "output_prefix": "adaptive_dissociation_periodic_confirmed"
+}

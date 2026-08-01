@@ -1,0 +1,19 @@
+{
+  "separation_nm": 0.60,
+  "screening_length_layer1_nm": 4.479911124019045,
+  "screening_length_layer2_nm": 3.4934510307918494,
+  "kappa_environment": 4.945,
+  "mass_e_m0": 0.58,
+  "mass_h_m0": 0.36,
+  "temperature_K": 20.0,
+  "n_beads": 256,
+  "moire_amplitude_eV": 0.045,
+  "moire_period_nm": 20.0,
+  "shift_values_nm": [0.0, 0.962, 1.925, 2.887, 3.849, 4.812, 5.774, 6.736, 7.698, 8.661, 9.623, 10.585, 11.547],
+  "shift_axis": "x",
+  "n_seeds": 10,
+  "n_steps": 120000,
+  "burn_in": 30000,
+  "sample_every": 20,
+  "output_prefix": "landscape_scan_v2_P256_matched"
+}

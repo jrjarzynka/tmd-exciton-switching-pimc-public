@@ -1,0 +1,17 @@
+{
+  "separation_nm": 0.60,
+  "screening_length_layer1_nm": 4.479911124019045,
+  "screening_length_layer2_nm": 3.4934510307918494,
+  "kappa_environment": 4.945,
+  "mass_e_m0": 0.58,
+  "mass_h_m0": 0.36,
+  "temperature_K": 20.0,
+  "n_beads": 256,
+  "n_seeds": 5,
+  "n_steps": 60000,
+  "burn_in": 15000,
+  "sample_every": 20,
+  "reference_rho2_nm2": 5.3927,
+  "reference_rho_nm": 1.9778,
+  "output_prefix": "two_body_baseline"
+}

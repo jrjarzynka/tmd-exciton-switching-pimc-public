@@ -1,0 +1,32 @@
+# Build/results artifacts
+results/
+.pytest_cache/
+
+# Python bytecode and numba JIT cache (machine/version-specific, must never be committed)
+__pycache__/
+*.pyc
+*.pyo
+*.nbc
+*.nbi
+
+# Packaging
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+
+# OS / editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# NOTE: this file only prevents NEW files from being tracked. It does nothing
+# for files already committed in a previous commit (e.g. the numba cache
+# files and docs/ project-state notes found in the audit) -- those need to be
+# removed with `git rm --cached <path>` in a new commit, and if they were
+# ever pushed to a public remote, purged from history (git filter-repo or a
+# fresh repository) before the repository is made public again.

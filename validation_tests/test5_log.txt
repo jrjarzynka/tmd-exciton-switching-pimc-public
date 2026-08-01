@@ -1,0 +1,52 @@
+P=  10 local    seed=0 n_steps=  13500 tau=   36.29 ESS=  167.4
+P=  10 local    seed=1 n_steps=  13500 tau=   36.45 ESS=  166.6
+P=  10 local    seed=2 n_steps=  13500 tau=   52.40 ESS=  115.9
+P=  10 local    seed=3 n_steps=  13500 tau=   43.45 ESS=  139.8
+  -> P=10 local: tau_mean=42.15 +/- 3.80
+P=  10 staging  seed=0 n_steps=  10500 tau=   17.95 ESS=  263.3
+P=  10 staging  seed=1 n_steps=  10500 tau=   20.13 ESS=  234.7
+P=  10 staging  seed=2 n_steps=  10500 tau=   21.47 ESS=  220.1
+P=  10 staging  seed=3 n_steps=  10500 tau=   23.05 ESS=  205.0
+  -> P=10 staging: tau_mean=20.65 +/- 1.08
+P=  20 local    seed=0 n_steps=  27000 tau=   68.33 ESS=  177.8
+P=  20 local    seed=1 n_steps=  27000 tau=   79.92 ESS=  152.0
+P=  20 local    seed=2 n_steps=  27000 tau=   85.77 ESS=  141.7
+P=  20 local    seed=3 n_steps=  27000 tau=   64.63 ESS=  188.0
+  -> P=20 local: tau_mean=74.66 +/- 4.93
+P=  20 staging  seed=0 n_steps=  10500 tau=   25.13 ESS=  188.0
+P=  20 staging  seed=1 n_steps=  10500 tau=   13.98 ESS=  338.0
+P=  20 staging  seed=2 n_steps=  10500 tau=   22.00 ESS=  214.8
+P=  20 staging  seed=3 n_steps=  10500 tau=   20.49 ESS=  230.6
+  -> P=20 staging: tau_mean=20.40 +/- 2.35
+P=  40 local    seed=0 n_steps=  54000 tau=  115.41 ESS=  210.6
+P=  40 local    seed=1 n_steps=  54000 tau=  117.68 ESS=  206.5
+P=  40 local    seed=2 n_steps=  54000 tau=   86.14 ESS=  282.1
+P=  40 local    seed=3 n_steps=  54000 tau=  123.18 ESS=  197.3
+  -> P=40 local: tau_mean=110.60 +/- 8.31
+P=  40 staging  seed=0 n_steps=  10500 tau=   16.08 ESS=  293.9
+P=  40 staging  seed=1 n_steps=  10500 tau=   16.26 ESS=  290.6
+P=  40 staging  seed=2 n_steps=  10500 tau=   16.17 ESS=  292.1
+P=  40 staging  seed=3 n_steps=  10500 tau=   16.28 ESS=  290.3
+  -> P=40 staging: tau_mean=16.20 +/- 0.05
+P=  80 local    seed=0 n_steps= 108000 tau=  203.09 ESS=  239.3
+P=  80 local    seed=1 n_steps= 108000 tau=  179.76 ESS=  270.4
+P=  80 local    seed=2 n_steps= 108000 tau=  296.90 ESS=  163.7
+P=  80 local    seed=3 n_steps= 108000 tau=  247.70 ESS=  196.2
+  -> P=80 local: tau_mean=231.86 +/- 25.86
+P=  80 staging  seed=0 n_steps=  10500 tau=   20.43 ESS=  231.3
+P=  80 staging  seed=1 n_steps=  10500 tau=   22.51 ESS=  209.9
+P=  80 staging  seed=2 n_steps=  10500 tau=   19.08 ESS=  247.6
+P=  80 staging  seed=3 n_steps=  10500 tau=   21.16 ESS=  223.2
+  -> P=80 staging: tau_mean=20.80 +/- 0.72
+P= 160 local    seed=0 n_steps= 213000 tau=  484.74 ESS=  197.7
+P= 160 local    seed=1 n_steps= 213000 tau=  437.10 ESS=  219.3
+P= 160 local    seed=2 n_steps= 213000 tau=  598.98 ESS=  160.0
+P= 160 local    seed=3 n_steps= 213000 tau=  647.08 ESS=  148.1
+  -> P=160 local: tau_mean=541.98 +/- 48.79
+P= 160 staging  seed=0 n_steps=  10500 tau=   23.04 ESS=  205.1
+P= 160 staging  seed=1 n_steps=  10500 tau=   25.55 ESS=  184.9
+P= 160 staging  seed=2 n_steps=  10500 tau=   26.48 ESS=  178.4
+P= 160 staging  seed=3 n_steps=  10500 tau=   31.11 ESS=  151.9
+  -> P=160 staging: tau_mean=26.54 +/- 1.69
+z_local = 0.9004
+z_staging = 0.0752

@@ -1,0 +1,14 @@
+{
+  "model_version": "v1.7-direct-interlayer-baseline",
+  "structure": "direct_WSe2_MoSe2",
+  "hbn_spacer": false,
+  "electron_layer": "MoSe2",
+  "hole_layer": "WSe2",
+  "reduced_mass_m0": 0.25,
+  "interlayer_separation_nm": 0.60,
+  "single_layer_screening_length_nm": 4.50,
+  "environment_model": "suspended",
+  "epsilon_env": 1.0,
+  "interface_distance_nm": 1000000.0,
+  "notes": "Published symmetric direct-bilayer baseline. No hBN spacer. D=0.60 nm, r0=4.50 nm and reduced mass 0.25 m0 are baseline values, not a final layer-resolved WSe2/MoSe2 parameter set."
+}
