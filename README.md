@@ -15,7 +15,7 @@ cross-checked references.
 ## Installation
 
 ```bash
-git clone https://github.com/jrjarzynka/tmd-exciton-switching-pimc.git
+git clone https://github.com/jrjarzynka/tmd-exciton-switching-pimc-public.git
 cd tmd-exciton-switching-pimc
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
