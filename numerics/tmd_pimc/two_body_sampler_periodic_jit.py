@@ -118,13 +118,44 @@ class TwoBodyPIMCSamplerStagingPeriodicJIT:
         self._r_int_max = r_max
 
         from .potentials import MoirePotential, OutOfPlaneStarkPotential, CompositePotential
+        from .potential_helpers import ShiftedPotential
 
         bare_moire = MoirePotential(amplitude_eV=moire_amplitude_eV, period_nm=moire_period_nm)
 
+        # BUGFIX (2026-08-02): origin_e_nm/origin_h_nm used to be forwarded
+        # straight into build_periodic_cell_grid's `origin_nm` argument,
+        # which only relocates the rasterization *window*. Because
+        # bare_moire is exactly periodic under the same lattice vectors used
+        # for the periodic wrap, moving the rasterization window and then
+        # wrapping the query point with that same window cancels out
+        # completely -- verified numerically (differences at the ~1e-6 eV
+        # interpolation-noise level, vs ~0.04 eV, i.e. order amplitude, for a
+        # genuine shift). Net effect: the electron and hole were being
+        # sampled on the IDENTICAL, unshifted moire registry regardless of
+        # origin_h_nm, silently invalidating any "registry offset" result
+        # produced this way (only the OutOfPlaneStarkPotential anchor, which
+        # bakes its shift directly into value(r) and is therefore immune to
+        # this cancellation, was ever actually shifted).
+        #
+        # Fix: bake the registry shift into the potential itself via
+        # ShiftedPotential (evaluates inner.value(r - shift), a genuine
+        # query-point shift) BEFORE rasterizing, then rasterize with
+        # origin_nm=(0,0) so the window-placement trick is never relied on
+        # for anything except window placement. Stark terms are NOT
+        # wrapped again here since their own anchor_nm already performs the
+        # equivalent shift internally; wrapping the composite a second time
+        # would double-shift the Stark phase.
+        registry_e_nm = tuple(origin_e_nm)
+        registry_h_nm = tuple(origin_h_nm)
+        moire_e = (ShiftedPotential(inner=bare_moire, shift_nm=registry_e_nm)
+                   if registry_e_nm != (0.0, 0.0) else bare_moire)
+        moire_h = (ShiftedPotential(inner=bare_moire, shift_nm=registry_h_nm)
+                   if registry_h_nm != (0.0, 0.0) else bare_moire)
+
         if self.Fz_eV_per_nm != 0.0:
             _stark_period = float(stark_period_nm) if stark_period_nm is not None else float(moire_period_nm)
-            _anchor_e = tuple(stark_anchor_e_nm) if stark_anchor_e_nm is not None else tuple(origin_e_nm)
-            _anchor_h = tuple(stark_anchor_h_nm) if stark_anchor_h_nm is not None else tuple(origin_h_nm)
+            _anchor_e = tuple(stark_anchor_e_nm) if stark_anchor_e_nm is not None else registry_e_nm
+            _anchor_h = tuple(stark_anchor_h_nm) if stark_anchor_h_nm is not None else registry_h_nm
 
             stark_e = OutOfPlaneStarkPotential(
                 Fz_eV_per_nm=-self.Fz_eV_per_nm,  # q_eff = -1 (electron), matches
@@ -143,21 +174,21 @@ class TwoBodyPIMCSamplerStagingPeriodicJIT:
                 anchor_nm=_anchor_h,
                 normalisation=stark_normalisation,
             )
-            potential_e_for_grid = CompositePotential(terms=[bare_moire, stark_e])
-            potential_h_for_grid = CompositePotential(terms=[bare_moire, stark_h])
+            potential_e_for_grid = CompositePotential(terms=[moire_e, stark_e])
+            potential_h_for_grid = CompositePotential(terms=[moire_h, stark_h])
             self._stark_e = stark_e  # kept for introspection/testing
             self._stark_h = stark_h
         else:
-            potential_e_for_grid = bare_moire
-            potential_h_for_grid = bare_moire
+            potential_e_for_grid = moire_e
+            potential_h_for_grid = moire_h
             self._stark_e = None
             self._stark_h = None
 
         self._grid_e = build_periodic_cell_grid(
-            potential_e_for_grid, moire_period_nm, origin_nm=origin_e_nm, grid_size=periodic_cell_grid_size
+            potential_e_for_grid, moire_period_nm, origin_nm=(0.0, 0.0), grid_size=periodic_cell_grid_size
         )
         self._grid_h = build_periodic_cell_grid(
-            potential_h_for_grid, moire_period_nm, origin_nm=origin_h_nm, grid_size=periodic_cell_grid_size
+            potential_h_for_grid, moire_period_nm, origin_nm=(0.0, 0.0), grid_size=periodic_cell_grid_size
         )
 
     def initialize_paths(self, center_e=(0.0, 0.0), center_h=(0.0, 0.0), spread_nm=0.1):
