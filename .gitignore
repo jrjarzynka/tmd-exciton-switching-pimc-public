@@ -30,3 +30,4 @@ venv/
 # removed with `git rm --cached <path>` in a new commit, and if they were
 # ever pushed to a public remote, purged from history (git filter-repo or a
 # fresh repository) before the repository is made public again.
+future_work/atomistic_bridge_placeholder/gsfe_scan_inputs/

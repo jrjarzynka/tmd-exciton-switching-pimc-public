@@ -53,15 +53,63 @@ def registry_energy(
     theta_deg: float,
     depth_eV: float,
     phase: float = 0.0,
+    registry_shift_nm: tuple[float, float] | None = None,
     invert: bool = False,
     registry_norm_mode: str = "global",
 ) -> np.ndarray:
+    """Registry (stacking-offset) energy landscape.
+
+    registry_shift_nm is the physically correct way to specify a registry
+    offset: a rigid in-plane translation of the top layer relative to the
+    bottom layer by the given (dx_nm, dy_nm) vector. Internally this is
+    implemented as raw(r) = sum_k cos(G_k . (r - shift)), i.e. a genuine
+    per-G_k phase of -G_k . shift for EACH of the three moire G-vectors.
+
+    BUGFIX (2026-08-02): the legacy `phase` parameter added a single scalar
+    offset to only the k=0 cosine term, e.g.
+        raw = cos(G1.r + phase) + cos(G2.r) + cos(G3.r).
+    This does NOT correspond to any rigid translation of the registry
+    pattern -- verified numerically: even the best-fit scalar `phase`
+    reproduces a true rigid shift only to ~18% residual RMS (relative to
+    the pattern's own amplitude), i.e. it distorts the pattern shape
+    instead of translating it. A translated pattern requires a DIFFERENT
+    phase offset -G_k.shift for each of the three G_k (they are not
+    parallel, so a single scalar cannot represent that). `phase` is kept
+    only for exact backward compatibility with old configs that pinned it
+    at the harmless default of 0.0 (no config in this codebase ever used a
+    nonzero value); passing a nonzero `phase` now raises, forcing a switch
+    to `registry_shift_nm`, since silently returning a distorted-not-
+    translated landscape is worse than an explicit error.
+
+    A useful invariant that falls out of doing this correctly: since a
+    rigid translation of a periodic function does not change the SET of
+    values it attains (only where each value occurs), the analytic
+    registry_norm_mode="global" bounds (raw in [-1.5, 3.0], or [-3.0, 1.5]
+    if invert=True) hold for ANY registry_shift_nm, not just the origin --
+    unlike the old buggy `phase` parameter, which (also verified
+    numerically) pushed raw outside of [-1.5, 3.0] and caused silent
+    clipping in "global" mode for any nonzero value.
+    """
+    if phase != 0.0 and registry_shift_nm is not None:
+        raise ValueError("pass either phase (legacy, must be 0.0) or registry_shift_nm, not both")
+    if phase != 0.0:
+        raise ValueError(
+            "phase != 0.0 does not implement a physical registry shift (see "
+            "registry_energy docstring) and has been disabled to prevent "
+            "silently generating a distorted, not translated, landscape. "
+            "Use registry_shift_nm=(dx_nm, dy_nm) instead."
+        )
     X_A = 10.0 * X_nm
     Y_A = 10.0 * Y_nm
     G = moire_G(a_bottom, a_top, theta_deg)
+    if registry_shift_nm is not None:
+        shift_A = np.asarray(registry_shift_nm, dtype=float) * 10.0
+        phase_k = [-(float(gx) * shift_A[0] + float(gy) * shift_A[1]) for gx, gy in G]
+    else:
+        phase_k = [0.0, 0.0, 0.0]
     raw = np.zeros_like(X_A)
     for k, (gx, gy) in enumerate(G):
-        raw += np.cos(gx * X_A + gy * Y_A + (phase if k == 0 else 0.0))
+        raw += np.cos(gx * X_A + gy * Y_A + phase_k[k])
     if invert:
         raw = -raw
     if str(registry_norm_mode).lower() == "global":
@@ -168,6 +216,7 @@ def generate_potential_map(
     deformation_v_eV: float = -3.0,
     interlayer_alpha_eV_per_nm: float = 0.0,
     phase_rad: float = 0.0,
+    registry_shift_nm: tuple[float, float] | None = None,
     invert_registry: bool = False,
     k_neighbors: int = 8,
     registry_norm_mode: str = "global",
@@ -226,6 +275,7 @@ def generate_potential_map(
         th,
         registry_depth_meV / 1000.0,
         phase=phase_rad,
+        registry_shift_nm=registry_shift_nm,
         invert=invert_registry,
         registry_norm_mode=registry_norm_mode,
     )
@@ -267,6 +317,7 @@ def generate_potential_map(
         "grid_n": int(grid_n),
         "registry_depth_meV": float(registry_depth_meV),
         "registry_norm_mode": str(registry_norm_mode),
+        "registry_shift_nm": np.asarray(registry_shift_nm if registry_shift_nm is not None else (0.0, 0.0), dtype=float),
         "deformation_c_eV": float(deformation_c_eV),
         "deformation_v_eV": float(deformation_v_eV),
         "disable_deformation": bool(disable_deformation),

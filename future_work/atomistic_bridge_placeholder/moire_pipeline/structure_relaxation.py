@@ -43,10 +43,26 @@ def monolayer(layer: TMDLayer, box_nm: float, theta_deg: float, z0_A: float, lna
     R = rot(math.radians(theta_deg))
     half = 0.5 * box_nm * 10.0
     nmax = int(math.ceil((math.sqrt(2) * half + 10.0) / layer.a_A)) + 4
+    # BUGFIX (2026-08-02): chalcogen_top and chalcogen_bottom previously
+    # used DIFFERENT in-plane fractional positions ((1/3,2/3) and
+    # (2/3,1/3) respectively). This is wrong for 2H-phase TMDs: the
+    # defining feature of trigonal PRISMATIC coordination is that the top
+    # and bottom chalcogen triangles around each metal atom are ECLIPSED
+    # (stacked directly on top of each other, same in-plane position,
+    # differing only in z) -- "two equilateral triangles, one directly
+    # above the other," not rotated/staggered relative to each other.
+    # Verified numerically: (1/3,2/3) alone gives a metal's nearest
+    # chalcogen neighbor at an unphysical ~2.00 A with NO threefold
+    # degeneracy (2nd/3rd neighbors at different, larger distances) --
+    # not a valid trigonal-prismatic motif at all. The correct shared
+    # in-plane offset (1/3,1/3) gives exactly three degenerate
+    # nearest-neighbor M-X bonds at 2.528 A, matching the experimental
+    # Mo-Se bond length (~2.53 A) used elsewhere in this project's
+    # DFT-calibration notes.
     basis = [
         (layer.metal, "metal", np.array([0.0, 0.0]), 0.0),
-        (layer.chalcogen, "chalcogen_top", (1.0 / 3.0) * a1 + (2.0 / 3.0) * a2, +layer.chalcogen_z_A),
-        (layer.chalcogen, "chalcogen_bottom", (2.0 / 3.0) * a1 + (1.0 / 3.0) * a2, -layer.chalcogen_z_A),
+        (layer.chalcogen, "chalcogen_top", (1.0 / 3.0) * a1 + (1.0 / 3.0) * a2, +layer.chalcogen_z_A),
+        (layer.chalcogen, "chalcogen_bottom", (1.0 / 3.0) * a1 + (1.0 / 3.0) * a2, -layer.chalcogen_z_A),
     ]
     species = []
     layers = []
