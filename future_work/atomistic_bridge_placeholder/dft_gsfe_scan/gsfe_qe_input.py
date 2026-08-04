@@ -113,6 +113,10 @@ def write_pw_input(
         f"    prefix = '{pfx}'\n"
         "    pseudo_dir = './pseudo'\n"
         "    outdir = './out'\n"
+        "    disk_io = 'none'\n"  # we only need the total energy from the
+                                  # .out log, not the wavefunction/density
+                                  # save files -- these balloon to several
+                                  # GB across a 49-point scan otherwise
         "    tprnfor = .true.\n"
         "    tstress = .false.\n"
         "    etot_conv_thr = 1.0d-6\n"
