@@ -1,3 +1,5 @@
+![Moiré registry landscape](assets/images/moire_registry_landscape.png)
+
 # Numerical-grid centre-of-mass Path-Integral Monte Carlo for moiré exciton relocation
 
 Code and validation scripts accompanying:
