@@ -125,10 +125,10 @@ def effective_sample_size(n_samples: int, tau_int: float) -> float:
 # --- Worker: uruchomienie jednego (shift, field, seed) -----------------------
 def worker_run_point(args_tuple) -> Dict[str, Any]:
     """
-    args_tuple = (config_path, shift_mag, field_mag, seed, output_dir, use_periodic)
+    args_tuple = (config_path, shift_mag, field_mag, seed, output_dir, use_periodic, save_full_samples)
     Zwraca dict z metadanymi i 'ts_path' do zapisanego .npz lub 'error'.
     """
-    config_path, shift_mag, field_mag, seed, output_dir, use_periodic = args_tuple
+    config_path, shift_mag, field_mag, seed, output_dir, use_periodic, save_full_samples = args_tuple
     out: Dict[str, Any] = {"seed": int(seed), "shift_magnitude_nm": float(shift_mag), "field_eV_per_nm": float(field_mag)}
     try:
         # Wczytaj config
@@ -274,23 +274,27 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
         else:
             grid_margin_nm = float("nan")
 
-        # zapisz time series i snapshoty
+        # zapisz time series i snapshoty (opt-in, patrz --save-full-samples --
+        # nic w tym repo nie czyta tych plików z powrotem, a potrafią
+        # urosnąć do dziesiątek GB na pełny skan)
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        ts_name = f"ts_shift{shift_mag:.6f}_field{field_mag:.6e}_seed{seed}.npz"
-        ts_path = out_dir / ts_name
-        np.savez_compressed(str(ts_path),
-                            rho2_t=rho2_t_mean,
-                            samples_e=samples_e,
-                            samples_h=samples_h,
-                            meta={
-                                "shift_magnitude_nm": shift_mag,
-                                "field_eV_per_nm": field_mag,
-                                "seed": seed,
-                                "n_steps": n_steps,
-                                "burn_in": burn_in,
-                                "sample_every": sample_every,
-                            })
+        ts_path = None
+        if save_full_samples:
+            ts_name = f"ts_shift{shift_mag:.6f}_field{field_mag:.6e}_seed{seed}.npz"
+            ts_path = out_dir / ts_name
+            np.savez_compressed(str(ts_path),
+                                rho2_t=rho2_t_mean,
+                                samples_e=samples_e,
+                                samples_h=samples_h,
+                                meta={
+                                    "shift_magnitude_nm": shift_mag,
+                                    "field_eV_per_nm": field_mag,
+                                    "seed": seed,
+                                    "n_steps": n_steps,
+                                    "burn_in": burn_in,
+                                    "sample_every": sample_every,
+                                })
 
         out.update({
             "sampler_backend": sampler_backend,
@@ -345,6 +349,17 @@ def main():
                               "been validated on the finite-box backend, so passing this raises "
                               "a RuntimeError rather than silently using an unvalidated path.")
     parser.add_argument("--resume", action="store_true", help="Resume from existing output-dir (checkpointing)")
+    parser.add_argument(
+        "--save-full-samples", dest="save_full_samples", action="store_true", default=False,
+        help="Also write per-seed ts_*.npz files containing the full samples_e/samples_h "
+             "trajectory arrays. OFF by default: nothing downstream in this repo reads "
+             "these files (confirmed via grep), and they balloon to tens of GB across a "
+             "full adaptive scan (46 GB observed for a single production rerun) while "
+             "every aggregate quantity actually used (rho2, centroid separation, "
+             "dissoc_frac, etc.) is already written to the per-seed/summary CSVs "
+             "regardless of this flag. Enable only if you specifically need raw "
+             "per-bead trajectories for offline inspection of a handful of points.",
+    )
     args = parser.parse_args()
 
     cfg_path = args.config
@@ -400,7 +415,7 @@ def main():
                 seed = 20000 + int(round(shift * 1000)) + int(round(field * 1e7)) + s_off
                 if args.resume and already_done(shift, field, seed):
                     continue
-                tasks.append((cfg_path, shift, float(field), seed, str(out_dir), args.use_periodic))
+                tasks.append((cfg_path, shift, float(field), seed, str(out_dir), args.use_periodic, args.save_full_samples))
 
     print(f"Submitting {len(tasks)} coarse tasks with {args.workers} workers")
     coarse_results: List[Dict[str, Any]] = []
@@ -492,7 +507,7 @@ def main():
                     seed = 30000 + int(round(shift * 1000)) + int(round(field * 1e7)) + s_off
                     if args.resume and already_done(shift, field, seed):
                         continue
-                    refine_tasks.append((cfg_path, shift, float(field), seed, str(out_dir), args.use_periodic))
+                    refine_tasks.append((cfg_path, shift, float(field), seed, str(out_dir), args.use_periodic, args.save_full_samples))
 
     print(f"Submitting {len(refine_tasks)} refine tasks")
     refine_results: List[Dict[str, Any]] = []
