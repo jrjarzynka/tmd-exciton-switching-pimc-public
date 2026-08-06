@@ -10,6 +10,7 @@ from .potentials import (
     CompositePotential,
     GridPotential2D,
     MoirePotential,
+    moire_hop_vectors_nm,
     StrainPiezoelectricPotential,
     SoftCoulombPotential,
 )

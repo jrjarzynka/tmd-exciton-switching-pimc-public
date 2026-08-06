@@ -102,11 +102,38 @@ class PIMCSamplerJIT:
                  grid_size=600, grid_range_nm=40.0,
                  boundary_mode="finite_square",
                  periodic_cell_vectors_nm=None,
-                 periodic_cell_origin_nm=None):
+                 periodic_cell_origin_nm=None,
+                 global_disp_vectors_nm=None,
+                 directed_move_frac=0.0,
+                 directed_jitter_nm=0.5):
         self.action = action
         self.local_step_nm = local_step_nm
         self.global_step_nm = global_step_nm
         self.global_move_probability = global_move_probability
+
+        # Kierunkowe propozycje ruchu globalnego (opcjonalne; domyslnie
+        # wylaczone, wiec zachowanie jest bit-w-bit zgodne z poprzednia
+        # wersja). Zbior MUSI byc domkniety na negacje -- patrz docstring
+        # run_pimc_core_jit; helper moire_hop_vectors_nm to gwarantuje.
+        if global_disp_vectors_nm is None:
+            self.global_disp_vectors_nm = np.empty((0, 2), dtype=np.float64)
+        else:
+            vecs = np.asarray(global_disp_vectors_nm, dtype=np.float64)
+            if vecs.ndim != 2 or vecs.shape[1] != 2:
+                raise ValueError("global_disp_vectors_nm must have shape (n_vec, 2)")
+            for v in vecs:
+                if not any(np.allclose(-v, w, atol=1e-9) for w in vecs):
+                    raise ValueError(
+                        "global_disp_vectors_nm must be closed under negation "
+                        "(for every v it must also contain -v), otherwise the "
+                        "Monte Carlo proposal is not symmetric and the plain "
+                        "Metropolis acceptance criterion is invalid."
+                    )
+            self.global_disp_vectors_nm = vecs
+        self.directed_move_frac = float(directed_move_frac)
+        if not (0.0 <= self.directed_move_frac <= 1.0):
+            raise ValueError("directed_move_frac must lie in [0, 1]")
+        self.directed_jitter_nm = float(directed_jitter_nm)
         self.rng_seed = rng_seed
         self.grid_size = int(grid_size)
         self.grid_range_nm = float(grid_range_nm)
@@ -210,6 +237,9 @@ class PIMCSamplerJIT:
                 global_step_nm=self.global_step_nm,
                 global_move_prob=self.global_move_probability,
                 seed=self.rng_seed,
+                global_disp_vectors=self.global_disp_vectors_nm,
+                directed_move_frac=self.directed_move_frac,
+                directed_jitter_nm=self.directed_jitter_nm,
             )
         else:
             Ainv = self._periodic_Ainv

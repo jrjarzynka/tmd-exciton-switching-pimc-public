@@ -117,16 +117,34 @@ def registry_shift_grid(n: int = 7) -> np.ndarray:
 
 
 def high_symmetry_path(n_per_segment: int = 6) -> tuple[np.ndarray, list[str]]:
-    """AA -> bridge -> AB -> AA path in fractional coords, the standard
-    reduced set of high-symmetry stacking points for a hexagonal bilayer
-    GSFE, useful as a cheap validation subset (e.g. for the nonlocal vdW-DF
-    cross-check) instead of the full 2D grid."""
+    """AA -> AB -> BA -> AA path in fractional coords: the standard reduced
+    set of high-symmetry stacking points for a hexagonal bilayer GSFE,
+    useful as a cheap validation subset (e.g. for the nonlocal vdW-DF
+    cross-check) instead of the full 2D grid.
+
+    BUGFIX (2026-08-06): the previous version used "AB" = (1/3, 2/3) and a
+    hard-coded "bridge" at (1/3, 1/6). Neither is a high-symmetry stacking:
+    folded into the primitive cell they sit a/3 and 0.441a from AA
+    respectively, whereas every genuine non-AA high-symmetry stacking is
+    exactly a/sqrt(3) away. The two correct ones are AB = (1/3, 1/3) and
+    BA = (2/3, 2/3), related to each other by inversion. The "bridge" point
+    has been dropped rather than replaced by another hand-picked value: the
+    true saddle of the GSFE surface should be located numerically from the
+    fitted surface, not asserted a priori.
+
+    Note that a k x k registry grid samples fractional shifts k/n only, so
+    for the 7x7 production grid it never lands on 1/3 or 2/3 -- the AB/BA
+    stackings are therefore reachable only by extrapolating the Fourier fit,
+    which is not accurate enough for the small AB/BA splitting. Compute
+    those points directly (see generate_highsym_points.py) rather than
+    reading them off the fit.
+    """
     pts_frac = {
         "AA": np.array([0.0, 0.0]),
-        "bridge": np.array([1.0 / 3.0, 1.0 / 6.0]),
-        "AB": np.array([1.0 / 3.0, 2.0 / 3.0]),
+        "AB": np.array([1.0 / 3.0, 1.0 / 3.0]),
+        "BA": np.array([2.0 / 3.0, 2.0 / 3.0]),
     }
-    order = ["AA", "bridge", "AB", "AA"]
+    order = ["AA", "AB", "BA", "AA"]
     coords = []
     labels = []
     for i in range(len(order) - 1):

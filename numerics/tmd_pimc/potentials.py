@@ -763,3 +763,70 @@ class SoftCoulombPotential(Potential2D):
         return -self.strength_eV_nm / np.sqrt(
             r2 + self.softening_nm**2
         )
+
+
+def moire_hop_vectors_nm(period_nm: float, include_bravais: bool = True) -> np.ndarray:
+    """Wektory przemieszczenia łączące równoważne minima MoirePotential.
+
+    Dla V(r) = (V0/3) sum_i cos(G_i . r) z trzema G_i rozstawionymi co 120
+    stopni, minima tworzą sieć PLASTRA MIODU (dwa minima na komórkę
+    prymitywną), a nie sieć Bravais. W konsekwencji istnieją dwie istotne
+    powłoki wektorów przeskoku:
+
+      * 3 wektory najbliższych sąsiadów o długości ``period_nm / sqrt(3)``
+        (łączą dwie podsieci plastra miodu),
+      * 6 wektorów sieci Bravais o długości ``period_nm``.
+
+    Zwracany zbiór jest DOMKNIĘTY NA NEGACJĘ, co jest warunkiem koniecznym
+    symetryczności propozycji Monte Carlo (patrz docstring
+    ``run_pimc_core_jit``): dla wektorów plastra miodu oznacza to, że z
+    danego węzła połowa propozycji trafia w równoważne minimum, a połowa
+    nie -- to strata wydajności rzędu 2x, ale zachowuje równowagę
+    szczegółową bez czynnika Hastingsa.
+
+    Parameters
+    ----------
+    period_nm : float
+        Okres potencjału moiré (ten sam, którego używa ``MoirePotential``).
+    include_bravais : bool
+        Czy dołączyć 6 wektorów sieci Bravais oprócz 6 wektorów plastra
+        miodu. Domyślnie True.
+
+    Returns
+    -------
+    np.ndarray, kształt (n_vec, 2), dtype float64
+    """
+    period_nm = float(period_nm)
+    if period_nm <= 0.0:
+        raise ValueError("period_nm must be positive")
+
+    # Wektory sieci rzeczywistej dualne do G_i (G_i . a_j = 2 pi delta_ij).
+    G = 4.0 * np.pi / (np.sqrt(3.0) * period_nm)
+    ang = np.deg2rad([0.0, 120.0])
+    Gm = np.stack([G * np.cos(ang), G * np.sin(ang)], axis=1)
+    A = 2.0 * np.pi * np.linalg.inv(Gm).T
+    a1, a2 = A[0], A[1]
+
+    vecs = []
+
+    # Powłoka plastra miodu: 3 najkrótsze wektory laczace podsieci, +/-.
+    # Wyznaczone jako (a1 + a2)/3 i jego obroty o +/-120 stopni.
+    d1 = (a1 + a2) / 3.0
+    for theta in (0.0, 2.0 * np.pi / 3.0, 4.0 * np.pi / 3.0):
+        c, s = np.cos(theta), np.sin(theta)
+        R = np.array([[c, -s], [s, c]])
+        d = R @ d1
+        vecs.append(d)
+        vecs.append(-d)
+
+    if include_bravais:
+        # 6 najblizszych sasiadow Bravais dla siatki heksagonalnej
+        # (kat 60 stopni miedzy a1 i a2): +/-a1, +/-a2, +/-(a1-a2), wszystkie
+        # o dlugosci period_nm. Uwaga: (1,1) daje |a1+a2| = period*sqrt(3),
+        # czyli DALSZA powloke -- nie nalezy jej tu uzywac.
+        for (i, j) in ((1, 0), (0, 1), (1, -1)):
+            v = i * a1 + j * a2
+            vecs.append(v)
+            vecs.append(-v)
+
+    return np.asarray(vecs, dtype=np.float64)

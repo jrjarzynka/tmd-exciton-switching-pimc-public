@@ -56,7 +56,25 @@ VALIDATION_VDW = "rvv10"    # or 'vdw-df2-b86r'
 
 # The 3 core high-symmetry stacking points, used for both the D3-relaxed
 # calibration subset and the rVV10 validation subset.
-HIGH_SYM_POINTS = {"AA": (0.0, 0.0), "bridge": (1.0 / 3.0, 1.0 / 6.0), "AB": (1.0 / 3.0, 2.0 / 3.0)}
+# BUGFIX (2026-08-06): "AB" was previously (1/3, 2/3), which is NOT a
+# high-symmetry stacking -- folded into the primitive cell it sits a/3 from
+# AA, not a/sqrt(3). The two genuine non-AA high-symmetry stackings of a
+# hexagonal bilayer are AB = (1/3, 1/3) and BA = (2/3, 2/3), both exactly
+# a/sqrt(3) from AA and related to each other by inversion. This is the same
+# wrong fractional coordinate that was fixed in the chalcogen basis earlier;
+# it survived here because the basis fix and the stacking-point definitions
+# are in different places. See tests/test_high_symmetry_points.py, which now
+# checks this invariant directly.
+#
+# The former "bridge" entry at (1/3, 1/6) is NOT a high-symmetry point either
+# (1.449 A from AA) and has been removed rather than replaced by a guess: the
+# true saddle of this GSFE surface should be located numerically from the
+# fitted surface, not hard-coded.
+HIGH_SYM_POINTS = {
+    "AA": (0.0, 0.0),
+    "AB": (1.0 / 3.0, 1.0 / 3.0),
+    "BA": (2.0 / 3.0, 2.0 / 3.0),
+}
 
 
 def main():
