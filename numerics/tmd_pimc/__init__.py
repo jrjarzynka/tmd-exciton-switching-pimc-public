@@ -36,6 +36,18 @@ from .analytic import (
 )
 from .constants import HBAR2_OVER_2M0, KB_EV_PER_K
 
+# Contact density |psi(0)|^2 of the relative coordinate, and its exact
+# references. Pure numpy: no numba, no sampler dependency, so it sits with the
+# other observables rather than behind the two-body guard below. It consumes
+# separations from any source, including the pure-Python sampler.
+from .contact import (
+    ContactDensityResult,
+    contact_density,
+    contact_density_gaussian_exact,
+    contact_density_exponential_exact,
+    relative_radiative_rate,
+)
+
 # Two-body (electron-hole) extension. Imported at the end and guarded so
 # that importing the base single-body package never requires numba (the
 # JIT-backed two_body_*_jit modules) if it isn't installed -- only importing
@@ -43,6 +55,21 @@ from .constants import HBAR2_OVER_2M0, KB_EV_PER_K
 from .two_body_action import TwoBodyRingPolymerAction
 from .two_body_sampler import TwoBodyPIMCSamplerStaging
 from .potential_helpers import ShiftedPotential
+
+# Observable layer over the two-body samplers: slice matching, interaction-range
+# diagnostics, and registry-resolved contact density. Deliberately OUTSIDE the
+# numba guard below -- it only post-processes the (n_configs, P, 2) sample
+# arrays and works identically for the pure-Python TwoBodyPIMCSamplerStaging.
+# Placing it inside the try/except would silently make these observables
+# unavailable on a numba-less install that can still produce the samples.
+from .pair_observables import (
+    SeparationDiagnostics,
+    pair_separations,
+    separation_diagnostics,
+    assert_interaction_is_aperiodic,
+    contact_density_from_samples,
+    contact_density_by_registry,
+)
 
 try:
     from .two_body_sampler_jit import TwoBodyPIMCSamplerStagingJIT
