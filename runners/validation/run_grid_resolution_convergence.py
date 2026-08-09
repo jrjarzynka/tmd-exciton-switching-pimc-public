@@ -4,12 +4,50 @@ Sec. 6 of the manuscript validates the sampler's PERIODICITY handling
 (bilinear wrap-around fix) on the square-grid COM prototype, but does not
 separately establish that the raster DENSITY used to represent the
 analytic moire landscape is fine enough for the bilinear-interpolation
-error to be negligible. This script closes that gap: it rasterizes the
-SAME analytic MoirePotential used to build the registry-grid landscape
-onto increasingly fine grids (via PIMCSamplerJIT's own grid_size
-parameter -- the exact production interpolation pathway used in Sec. 6,
-not a separate reimplementation), and tracks whether centroid-density
-observables converge as grid_size increases.
+error to be negligible. This script closes that gap: it rasterizes an
+analytic MoirePotential onto increasingly fine grids (via PIMCSamplerJIT's
+own grid_size parameter -- the exact production interpolation pathway used
+in Sec. 6, not a separate reimplementation), and tracks whether
+centroid-density observables converge as grid_size increases.
+
+Corrugation-depth conventions -- READ BEFORE CHANGING AMPLITUDE_EV
+------------------------------------------------------------------
+Three quantities in this codebase are all informally called the "registry
+depth", and they differ by a factor of 4.5:
+
+  amplitude_eV          MoirePotential.value() returns
+  (this script,          V0 * [cos(G1.r) + cos(G2.r) + cos(G3.r)],
+   numerics/)            so amplitude_eV IS V0, the first-shell Fourier
+                         amplitude. The landscape spans 4.5 * V0, from
+                         -1.5*V0 at the minima to +3.0*V0 at AA.
+
+  moire_amplitude_eV    Same convention (feeds MoirePotential directly).
+  (configs/two_body/)   Production value for the two-body scans: 0.045 eV.
+
+  registry_depth_meV    generate_potential_map.registry_energy() normalises
+  (future_work/          the raw three-cosine sum onto [0, 1] and multiplies
+   atomistic_bridge/)    by depth_eV, so registry_depth_meV is the
+                         PEAK-TO-PEAK span, i.e. 4.5 * V0 -- NOT V0.
+
+Consequently registry_depth_meV = 90 corresponds to V0 = 20 meV, and the
+AMPLITUDE_EV = 0.090 used here is 4.5x deeper than that placeholder rather
+than equal to it. The value is kept for backward compatibility with the
+already-published convergence campaign; do not "fix" it by editing the
+constant, since that would silently change results that are already
+reported. Use --amplitude-eV to run at a different depth.
+
+Relaxed-DFT GSFE calibration (49-point grid + direct AA/AB/BA runs) gives
+V0 = 121.60 meV for MoSe2/WSe2, i.e. --amplitude-eV 0.12160 here, or
+registry_depth_meV = 537.99 in the atomistic-bridge convention.
+
+One caveat when comparing against that calibration: the real GSFE surface
+carries a second reciprocal-lattice shell at 5.7% of the first. That shifts
+the peak-to-peak span by under 2% (537.99 vs 547.20 meV) but raises the
+SADDLE by 47% (89.30 vs 60.80 meV), because higher harmonics barely move the
+well depths while sharpening the barrier between them. Since it is the
+barrier, not the well depth, that sets escape and hopping rates, a
+three-cosine landscape fitted to reproduce the correct V0 will still
+underestimate activated transport on the real surface.
 
 Observables (matching the definitions already used in the manuscript):
     A_eff^S  = exp[-int P(R) ln P(R) d^2R]   (differential-entropy area)
@@ -50,12 +88,66 @@ from tmd_pimc.observables import centroids
 from tmd_pimc.constants import KB_EV_PER_K
 
 MASS_M0 = 0.5
-AMPLITUDE_EV = 0.090   # matches the "90 meV registry depth" placeholder, Sec. 6
+
+# V0, the first-shell Fourier amplitude -- NOT the peak-to-peak span, and NOT
+# the same convention as registry_depth_meV in the atomistic bridge (see the
+# module docstring). Legacy default, retained so the published convergence
+# campaign stays reproducible; override with --amplitude-eV.
+AMPLITUDE_EV = 0.090
 PERIOD_NM = 20.0       # MoirePotential's own default period
 BOX_HALF_WIDTH_NM = 50.0  # matches the "100 nm box" placeholder, Sec. 6
 HIST_BINS = 120
 HIST_RANGE = (-BOX_HALF_WIDTH_NM, BOX_HALF_WIDTH_NM)
 EPS = 1e-12
+
+# Exact ratios for the pure three-cosine form V = V0 * sum_i cos(G_i . r):
+#   AA (r = 0)        -> +3.0 * V0
+#   minima            -> -1.5 * V0
+#   saddle (M point)  -> -1.0 * V0
+PEAK_TO_PEAK_OVER_V0 = 4.5
+SADDLE_ABOVE_MIN_OVER_V0 = 0.5
+
+
+def v0_from_peak_to_peak(peak_to_peak_eV: float) -> float:
+    """Convert an atomistic-bridge registry_depth to this script's amplitude_eV."""
+    return peak_to_peak_eV / PEAK_TO_PEAK_OVER_V0
+
+
+def peak_to_peak_from_v0(v0_eV: float) -> float:
+    """Convert this script's amplitude_eV to the atomistic-bridge convention."""
+    return v0_eV * PEAK_TO_PEAK_OVER_V0
+
+
+def landscape_diagnostics(amplitude_eV: float, period_nm: float) -> dict:
+    """Measure the rasterised landscape and check it against the analytic form.
+
+    Printed at startup so the depth convention in force is visible in the log
+    rather than inferred from a constant's name. The assertion catches a
+    MoirePotential whose normalisation has changed underneath this script --
+    the failure mode that let amplitude_eV and registry_depth_meV drift apart
+    in the first place.
+    """
+    V = MoirePotential(amplitude_eV=amplitude_eV, period_nm=period_nm)
+    g = np.linspace(0.0, period_nm, 401)
+    X, Y = np.meshgrid(g, g, indexing="ij")
+    Z = V.value(np.column_stack([X.ravel(), Y.ravel()]))
+
+    measured_ptp = float(Z.max() - Z.min())
+    expected_ptp = peak_to_peak_from_v0(amplitude_eV)
+    if abs(measured_ptp - expected_ptp) / expected_ptp > 1e-3:
+        raise RuntimeError(
+            f"MoirePotential no longer follows V0 * sum_i cos(G_i . r): "
+            f"measured peak-to-peak {measured_ptp * 1000:.3f} meV, expected "
+            f"{expected_ptp * 1000:.3f} meV for amplitude_eV={amplitude_eV}. "
+            f"The depth conventions documented in this module are stale."
+        )
+
+    return {
+        "V0_meV": amplitude_eV * 1000.0,
+        "peak_to_peak_meV": measured_ptp * 1000.0,
+        "saddle_above_min_meV": SADDLE_ABOVE_MIN_OVER_V0 * amplitude_eV * 1000.0,
+        "equivalent_registry_depth_meV": expected_ptp * 1000.0,
+    }
 
 
 def effective_area_and_fp95(cents: np.ndarray, temperature_K: float,
@@ -97,7 +189,9 @@ def run_one_seed(grid_size: int, temperature_K: float, n_beads: int,
                   sample_every: int, rng_seed: int,
                   directed_move_frac: float = 0.0,
                   directed_jitter_nm: float = 0.5,
-                  hist_bins_list: tuple[int, ...] = (HIST_BINS,)) -> dict:
+                  hist_bins_list: tuple[int, ...] = (HIST_BINS,),
+                  amplitude_eV: float = AMPLITUDE_EV,
+                  period_nm: float = PERIOD_NM) -> dict:
     """Single-seed run. Returns both histogram-based observables (A_eff,
     F_p95 -- sensitive to HIST_BINS discretization noise, independent of
     grid_size) AND histogram-free observables (mean V, var V, mean r^2,
@@ -107,7 +201,7 @@ def run_one_seed(grid_size: int, temperature_K: float, n_beads: int,
     vs. seed-to-seed mixing/ergodicity) can be told apart rather than
     conflated into one number.
     """
-    potential = MoirePotential(amplitude_eV=AMPLITUDE_EV, period_nm=PERIOD_NM)
+    potential = MoirePotential(amplitude_eV=amplitude_eV, period_nm=period_nm)
     action = RingPolymerAction(
         mass_m0=MASS_M0, temperature_K=temperature_K,
         n_beads=n_beads, potential=potential,
@@ -120,7 +214,7 @@ def run_one_seed(grid_size: int, temperature_K: float, n_beads: int,
     # the spatial observables unchanged). Quantising the proposal direction
     # to the lattice raises acceptance by more than an order of magnitude.
     hop_vectors = (
-        moire_hop_vectors_nm(PERIOD_NM) if directed_move_frac > 0.0 else None
+        moire_hop_vectors_nm(period_nm) if directed_move_frac > 0.0 else None
     )
     sampler = PIMCSamplerJIT(
         action=action,
@@ -137,7 +231,7 @@ def run_one_seed(grid_size: int, temperature_K: float, n_beads: int,
     )
     result = sampler.run(n_steps=n_steps, burn_in=burn_in,
                           sample_every=sample_every,
-                          center=(PERIOD_NM / 2.0, 0.0))
+                          center=(period_nm / 2.0, 0.0))
     samples = result["samples"]
     if samples.shape[0] == 0:
         raise RuntimeError(f"No samples for grid_size={grid_size}, seed={rng_seed} "
@@ -203,7 +297,9 @@ def run_one(grid_size: int, temperature_K: float, n_beads: int,
             sample_every: int, rng_seeds: list[int],
             directed_move_frac: float = 0.0,
             directed_jitter_nm: float = 0.5,
-            hist_bins_list: tuple[int, ...] = (HIST_BINS,)) -> dict:
+            hist_bins_list: tuple[int, ...] = (HIST_BINS,),
+            amplitude_eV: float = AMPLITUDE_EV,
+            period_nm: float = PERIOD_NM) -> dict:
     """Averages run_one_seed over multiple seeds -- the same seed-averaging
     protocol already used to produce Table 5 (Sec. 6), needed here to
     distinguish genuine interpolation-resolution convergence from
@@ -221,7 +317,8 @@ def run_one(grid_size: int, temperature_K: float, n_beads: int,
                      n_steps, burn_in, sample_every, seed,
                      directed_move_frac=directed_move_frac,
                      directed_jitter_nm=directed_jitter_nm,
-                     hist_bins_list=hist_bins_list)
+                     hist_bins_list=hist_bins_list,
+                     amplitude_eV=amplitude_eV, period_nm=period_nm)
         for seed in rng_seeds
     ]
 
@@ -237,6 +334,9 @@ def run_one(grid_size: int, temperature_K: float, n_beads: int,
     return {
         "grid_size": grid_size,
         "n_seeds": len(rng_seeds),
+        "amplitude_V0_meV": amplitude_eV * 1000.0,
+        "peak_to_peak_meV": peak_to_peak_from_v0(amplitude_eV) * 1000.0,
+        "period_nm": period_nm,
         "acceptance_local_mean": float(acc_locals.mean()),
         "acceptance_global_mean": float(acc_globals.mean()),
         "A_eff_entropy_nm2_mean": float(a_effs.mean()),
@@ -264,7 +364,10 @@ def run_one(grid_size: int, temperature_K: float, n_beads: int,
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--grid-sizes", type=int, nargs="+",
                          default=[50, 100, 200, 400, 800],
                          help="Interpolation raster resolutions to test")
@@ -307,11 +410,34 @@ def main():
                               "directly at no extra sampling cost.")
     parser.add_argument("--directed-jitter-nm", type=float, default=0.5,
                          help="Gaussian jitter added to a directed proposal, nm")
+    parser.add_argument("--amplitude-eV", type=float, default=AMPLITUDE_EV,
+                         dest="amplitude_eV",
+                         help="Moire corrugation V0 -- the FIRST-SHELL FOURIER "
+                              "AMPLITUDE, not the peak-to-peak span. The "
+                              "landscape spans 4.5*V0. Default %(default)s "
+                              "(legacy, keeps the published campaign "
+                              "reproducible). Relaxed-DFT calibration for "
+                              "MoSe2/WSe2 gives 0.12160. To reproduce an "
+                              "atomistic-bridge registry_depth_meV of D, pass "
+                              "D/4500.")
+    parser.add_argument("--period-nm", type=float, default=PERIOD_NM,
+                         dest="period_nm",
+                         help="Moire period in nm (default: %(default)s)")
     parser.add_argument("--output", type=Path,
                          default=Path("results/grid_resolution_convergence.csv"))
     args = parser.parse_args()
 
     seeds = list(range(args.seed_start, args.seed_start + args.n_seeds))
+
+    diag = landscape_diagnostics(args.amplitude_eV, args.period_nm)
+    print("Landscape in force (see module docstring for the depth conventions):")
+    print(f"  V0, first-shell amplitude   : {diag['V0_meV']:8.3f} meV")
+    print(f"  peak-to-peak span           : {diag['peak_to_peak_meV']:8.3f} meV")
+    print(f"  saddle above minimum        : {diag['saddle_above_min_meV']:8.3f} meV")
+    print(f"  equivalent registry_depth   : "
+          f"{diag['equivalent_registry_depth_meV']:8.3f} meV "
+          f"(atomistic-bridge convention)")
+    print(f"  period                      : {args.period_nm:8.3f} nm\n")
 
     rows = []
     for gs in args.grid_sizes:
@@ -321,7 +447,9 @@ def main():
                              args.n_steps, args.burn_in, args.sample_every, seeds,
                              directed_move_frac=args.directed_move_frac,
                              directed_jitter_nm=args.directed_jitter_nm,
-                             hist_bins_list=tuple(args.hist_bins)))
+                             hist_bins_list=tuple(args.hist_bins),
+                             amplitude_eV=args.amplitude_eV,
+                             period_nm=args.period_nm))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w", newline="") as f:
