@@ -1,0 +1,6 @@
+2026-08-09  BRACKETING, s=0, V0=121.60 meV, d_p=0.00798 nm
+  baza: V0=45 meV, d_p=0.05 nm -> F_z,50(s=0) = 0.4727 eV/nm
+  skalowanie: bariera siodlowa 22.5 -> 89.30 meV (x3.97), d_p /6.27
+              szacunek jednoladunkowy 0.45 -> 11.19 eV/nm
+  PRZEWIDYWANIE F_z,50(s=0) = 11.75 eV/nm
+  akceptacja +/-20%: [9.40, 14.10]
