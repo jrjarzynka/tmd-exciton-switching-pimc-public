@@ -32,3 +32,8 @@ venv/
 # fresh repository) before the repository is made public again.
 future_work/atomistic_bridge_placeholder/gsfe_scan_inputs/
 gsfe_scan_inputs_from_cloud/
+
+# Local environment, QE crash dumps, and Stage 0 run outputs
+.venv312/
+CRASH
+future_work/atomistic_bridge_placeholder/stage0/
