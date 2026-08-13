@@ -52,6 +52,23 @@ What this is and is not
 The result is the THERMAL contact density, Sum_n |psi_n(0)|^2 exp(-beta E_n) / Z,
 not the ground-state value. At temperatures comparable to the level spacing
 excited states contribute. For a ground-state number, extrapolate in beta.
+
+"Contact" here means zero IN-PLANE separation, not zero separation. For an
+interlayer exciton the electron and hole sit in different layers, and the
+bilayer Keldysh interaction enters through the three-dimensional distance
+sqrt(rho^2 + D^2) with D the interlayer separation (0.6 nm for MoSe2/WSe2).
+Two consequences follow.
+
+First, the interaction is never singular: at rho = 0 it is finite, set by D.
+The pair wavefunction therefore has NO cusp and is smooth at the origin, the
+milder of the two cases the estimator is calibrated against.
+
+Second, and more importantly for interpretation: the interlayer overlap that
+suppresses interlayer-exciton recombination by orders of magnitude is NOT in
+|psi(0)|^2. It sits in the prefactor, together with mu_cv, and neither is
+available in an effective-mass model. Ratios between registries, fields and
+temperatures are meaningful because that prefactor cancels; absolute rates are
+not, and no amount of sampling will make them so.
 """
 
 from __future__ import annotations

@@ -46,11 +46,15 @@ from .contact import ContactDensityResult, contact_density
 
 __all__ = [
     "SeparationDiagnostics",
+    "PairCorrelation",
     "pair_separations",
     "separation_diagnostics",
     "assert_interaction_is_aperiodic",
     "contact_density_from_samples",
     "contact_density_by_registry",
+    "pair_correlation",
+    "variance_decomposition",
+    "detect_bimodality",
 ]
 
 
@@ -245,3 +249,159 @@ def contact_density_by_registry(
             except ValueError:
                 out[(i, j)] = None
     return out
+
+
+# =============================================================================
+# PAIR CORRELATION FUNCTION
+# =============================================================================
+
+
+@dataclass(slots=True)
+class PairCorrelation:
+    """Radial density and pair correlation function of the relative coordinate."""
+
+    rho_nm: np.ndarray            # bin representatives
+    radial_density: np.ndarray    # P(rho), normalised so that int P drho = 1
+    g_of_rho: np.ndarray          # |psi(rho)|^2 = P(rho) / (2 pi rho)
+    counts: np.ndarray
+    bin_edges_rho: np.ndarray
+    n_samples: int
+
+
+def pair_correlation(
+    rho: np.ndarray,
+    r_max: Optional[float] = None,
+    n_bins: int = 60,
+) -> PairCorrelation:
+    """Radial density P(rho) and pair correlation g(rho) = |psi(rho)|^2.
+
+    Both are returned because confusing them is easy and consequential. P(rho)
+    is what a histogram of separations shows; it vanishes at the origin purely
+    because the 2D measure does, 2 pi rho drho, not because the pair avoids
+    contact. g(rho) divides that measure out and is the physical quantity: its
+    value at zero is the contact density.
+
+    Binning is uniform in u = rho^2, i.e. equal-AREA annuli. This is the same
+    scheme `contact_density` uses. It keeps the statistics per bin roughly
+    constant instead of starving the small-rho bins, and it puts finer
+    resolution at large rho, which is where a second population sits if the
+    pair separates into neighbouring moire minima.
+
+    Do NOT read g(0) off the first bin. That bin reports an average over
+    [0, sqrt(du)], which for a decaying g underestimates the value at the
+    origin, and the bias grows with the bin width -- here set by the whole
+    plotted range rather than by a window chosen for extrapolation. Use
+    `contact_density`, which fits a narrow window near the origin for exactly
+    this reason.
+    """
+    rho = np.asarray(rho, dtype=float).ravel()
+    rho = rho[np.isfinite(rho)]
+    if rho.size < 50:
+        raise ValueError(f"Need at least 50 samples, got {rho.size}.")
+
+    if r_max is None:
+        r_max = float(rho.max()) * 1.02
+    u_max = r_max ** 2
+
+    counts, u_edges = np.histogram(rho ** 2, bins=n_bins, range=(0.0, u_max))
+    rho_edges = np.sqrt(u_edges)
+    du = u_edges[1] - u_edges[0]
+
+    # density in u is exactly pi |psi|^2, with no Jacobian factor
+    density_u = counts / (rho.size * du)
+    g = density_u / np.pi
+
+    u_mid = 0.5 * (u_edges[:-1] + u_edges[1:])
+    rho_mid = np.sqrt(u_mid)
+
+    # P(rho) is taken directly as the histogram density in rho rather than as
+    # 2 pi rho_mid g. The two agree only where rho_mid coincides with the
+    # midpoint in rho, which equal-area bins guarantee nowhere and violate
+    # badly in the first bin (it spans [0, sqrt(du)], whose rho-midpoint is
+    # 0.5 sqrt(du) against rho_mid = 0.707 sqrt(du)). Using the product form
+    # overestimates the normalisation by ~14% for a bound pair, concentrated
+    # exactly in the bins that carry most of the samples.
+    d_rho = np.diff(rho_edges)
+    radial = counts / (rho.size * d_rho)
+
+    return PairCorrelation(
+        rho_nm=rho_mid, radial_density=radial, g_of_rho=g,
+        counts=counts, bin_edges_rho=rho_edges, n_samples=int(rho.size),
+    )
+
+
+def variance_decomposition(rho_per_seed: Sequence[np.ndarray]) -> dict:
+    """Split the variance of rho^2 into within-seed and between-seed parts.
+
+    This is the measurement that decides what a bimodal pair correlation means,
+    and the two readings are opposite:
+
+      within-seed   a single trajectory visits both the co-located and the
+                    separated configuration. The pair genuinely switches, and a
+                    two-state description is physical.
+
+      between-seed  each trajectory stays in whichever configuration it started
+                    in and the seeds merely disagree. The aggregate looks
+                    bimodal, but that is incomplete ergodicity, and any
+                    "transition" measured from it is a lottery over initial
+                    conditions rather than a response to the field.
+
+    A histogram of per-seed <rho^2>, which is what the manuscript currently
+    shows, cannot separate these: it is a distribution of means, and a
+    unimodal distribution of means is perfectly compatible with sharply
+    bimodal sampling inside every seed.
+    """
+    if len(rho_per_seed) < 2:
+        raise ValueError("Need at least two seeds for a decomposition.")
+
+    r2 = [np.asarray(r, dtype=float).ravel() ** 2 for r in rho_per_seed]
+    means = np.array([x.mean() for x in r2])
+    within = float(np.mean([x.var() for x in r2]))
+    between = float(means.var(ddof=1))
+    total = within + between
+
+    return {
+        "within_seed_variance": within,
+        "between_seed_variance": between,
+        "between_seed_fraction": float(between / total) if total > 0 else float("nan"),
+        "per_seed_mean_rho2": means,
+        "n_seeds": len(r2),
+    }
+
+
+def detect_bimodality(pc: PairCorrelation, min_prominence_frac: float = 0.10) -> dict:
+    """Locate peaks in the radial density and measure the dip between them.
+
+    Operates on P(rho) rather than g(rho): g rises monotonically toward the
+    origin for a bound pair, so a second population shows up as a shoulder
+    there, whereas in P(rho) both populations appear as genuine peaks.
+
+    `min_prominence_frac` is expressed relative to the tallest peak, so the
+    criterion does not depend on normalisation or on the sample count.
+    """
+    from scipy.signal import find_peaks
+
+    p = np.asarray(pc.radial_density, dtype=float)
+    if p.max() <= 0:
+        return {"n_modes": 0, "peak_rho_nm": [], "dip_depth": float("nan")}
+
+    # find_peaks never reports an endpoint, but the bound-state peak of a
+    # tightly bound pair sits in the very first bin. Padding with zeros makes
+    # the boundary eligible without perturbing interior prominences.
+    padded = np.concatenate(([0.0], p, [0.0]))
+    peaks, props = find_peaks(padded, prominence=min_prominence_frac * p.max())
+    peaks = peaks - 1
+    peak_rho = [float(pc.rho_nm[i]) for i in peaks]
+
+    dip = float("nan")
+    if len(peaks) >= 2:
+        i, j = peaks[0], peaks[-1]
+        valley = p[i:j + 1].min()
+        dip = float(1.0 - valley / min(p[i], p[j]))
+
+    return {
+        "n_modes": int(len(peaks)),
+        "peak_rho_nm": peak_rho,
+        "peak_prominence": [float(v) for v in props.get("prominences", [])],
+        "dip_depth": dip,
+    }

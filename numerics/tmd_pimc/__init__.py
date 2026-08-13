@@ -64,11 +64,15 @@ from .potential_helpers import ShiftedPotential
 # unavailable on a numba-less install that can still produce the samples.
 from .pair_observables import (
     SeparationDiagnostics,
+    PairCorrelation,
     pair_separations,
     separation_diagnostics,
     assert_interaction_is_aperiodic,
     contact_density_from_samples,
     contact_density_by_registry,
+    pair_correlation,
+    variance_decomposition,
+    detect_bimodality,
 )
 
 try:
