@@ -360,6 +360,13 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None, help="CSV output path")
     args = ap.parse_args(argv)
 
+    # Line-buffer stdout so that `tail -f` on a redirected log shows progress.
+    # Without this a multi-hour run looks dead until it finishes.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
     with open(args.config) as fh:
         cfg = json.load(fh)
 
@@ -404,9 +411,11 @@ def main(argv=None) -> int:
             rows.append(r)
             se = binomial_stderr(r.dissociated_fraction, r.n_seeds)
             extra = f"  |psi(0)|^2={r.psi0_sq:.5f}" if r.psi0_sq else ""
+            lo = min(r.rho2_per_seed); hi = max(r.rho2_per_seed)
             print(f"  Fz={Fz:7.3f}  frac={r.dissociated_fraction:5.2f} +/-{se:4.2f}"
-                  f"  median<rho^2>={r.rho2_median:9.2f}"
-                  f"  max rho={r.max_separation_nm:7.2f} nm{extra}")
+                  f"  <rho^2> med={r.rho2_median:8.2f} "
+                  f"[{lo:7.2f}, {hi:8.2f}]"
+                  f"  max rho={r.max_separation_nm:6.2f}{extra}")
             for w in r.warnings:
                 print(f"      [warning] {w}")
         by_n[n_steps] = pts
@@ -450,17 +459,28 @@ def main(argv=None) -> int:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", newline="") as fh:
             w = csv.writer(fh)
+            # rho2_per_seed is recorded because the aggregate statistics
+            # cannot answer the question the scan is for. A sharp 0 -> 1
+            # transition has two readings -- every seed switching at the same
+            # field, or seeds locked in whichever state they started in -- and
+            # only the per-seed distribution separates them. Reconstructing it
+            # later is impossible: the runner keeps no raw samples.
             w.writerow(["n_steps", "Fz_eV_per_nm", "n_seeds",
                         "dissociated_fraction", "stderr", "rho2_median",
+                        "rho2_per_seed", "rho2_seed_spread",
                         "max_separation_nm", "interaction_cutoff_nm",
                         "cutoff_ok", "acceptance_global", "psi0_sq",
                         "moire_amplitude_eV", "dipole_length_nm",
                         "shift_nm", "dissociation_threshold_nm2"])
             for r in rows:
+                seed_vals = ";".join(f"{v:.6f}" for v in r.rho2_per_seed)
+                spread = (float(np.std(r.rho2_per_seed, ddof=1))
+                          if len(r.rho2_per_seed) > 1 else float("nan"))
                 w.writerow([r.n_steps, r.Fz_eV_per_nm, r.n_seeds,
                             f"{r.dissociated_fraction:.6f}",
                             f"{binomial_stderr(r.dissociated_fraction, r.n_seeds):.6f}",
-                            f"{r.rho2_median:.6f}", f"{r.max_separation_nm:.6f}",
+                            f"{r.rho2_median:.6f}", seed_vals, f"{spread:.6f}",
+                            f"{r.max_separation_nm:.6f}",
                             r.interaction_cutoff_nm, int(r.cutoff_ok),
                             f"{r.acceptance_global:.6f}",
                             "" if r.psi0_sq is None else f"{r.psi0_sq:.8f}",
