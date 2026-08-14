@@ -8,6 +8,10 @@ Code and validation scripts accompanying:
 > for field-driven exciton-centroid relocation in moiré-scale landscapes*,
 > submitted to Computational Materials Science.
 
+An archived, citable snapshot of this repository is available at
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+<!-- TODO: replace XXXXXXX with the Zenodo record ID after tagging v1.0 -->
+
 This repository implements and validates a Path-Integral Quantum Monte Carlo (PI-QMC)
 engine for the centre-of-mass (COM) dynamics of an exciton in a moiré-scale potential
 landscape, including a staging (Brownian-bridge) sampler, JIT-compiled kernels for
@@ -18,7 +22,7 @@ cross-checked references.
 
 ```bash
 git clone https://github.com/jrjarzynka/tmd-exciton-switching-pimc-public.git
-cd tmd-exciton-switching-pimc
+cd tmd-exciton-switching-pimc-public
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
@@ -45,6 +49,13 @@ in editable mode, so changes to the source are picked up without reinstalling.
   describing exactly what it checks.
 * `tests/` — unit tests (`pytest`) for the screened-interaction potentials and the
   radial solver used in the two-body extension.
+* `moire_builder/` — commensurate moiré supercell construction via coincidence-lattice
+  search (`build_commensurate_moire_v3.py`), with the validated heterostrain
+  decomposition and the reference `moire_17_16.xyz` structure (θ ≈ 2.0046°, m=17/n=−16).
+  Used by the forthcoming two-body manuscript; not required to reproduce any result
+  in this submission.
+* `prereg_calib.txt` — pre-registered predictions (bracketing outcome, convergence
+  behaviour) recorded *before* the corresponding production scans were run.
 * `configs/` — JSON configuration templates for production scans. `configs/two_body/legacy/`
   contains two deliberately mislabelled configs (`*_COMPROMISED_*`, `*_SUPERSEDED_*`)
   kept as a documented record of a diagnosed and fixed sampling artifact, not for reuse.
@@ -77,6 +88,16 @@ available diagnostics): `validation_tests/test6_stability_map.py`
 
 Each `runners/validation/run_*.py` script accepts `--help` for its full parameter
 list and writes a CSV to `results/` (git-ignored; not tracked in this repository).
+
+**On shipped data.** The self-contained scripts in `validation_tests/` (Validation I–III)
+are accompanied by their output CSVs, so those results can be inspected without
+re-running anything. The `runners/validation/` scripts backing Validation IV–VI write
+to the git-ignored `results/` directory and must be re-run to regenerate their tables;
+each completes in minutes on a single core with default arguments.
+
+**On test runtime.** A full `pytest tests/` run takes on the order of ten minutes,
+dominated by Numba JIT compilation on first invocation and by the Monte Carlo
+cross-validation tests. This is expected, not a hang.
 
 ## Two-body extension
 
