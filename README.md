@@ -8,9 +8,11 @@ Code and validation scripts accompanying:
 > for field-driven exciton-centroid relocation in moiré-scale landscapes*,
 > submitted to Computational Materials Science.
 
-An archived, citable snapshot of this repository is available at
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
-<!-- TODO: replace XXXXXXX with the Zenodo record ID after tagging v1.0 -->
+An archived, citable snapshot of this repository is available on Zenodo:
+[![DOI](https://zenodo.org/badge/1319565945.svg)](https://doi.org/10.5281/zenodo.21935778)
+
+The version accompanying the submitted manuscript is `v1.0`,
+DOI [10.5281/zenodo.21935779](https://doi.org/10.5281/zenodo.21935779).
 
 This repository implements and validates a Path-Integral Quantum Monte Carlo (PI-QMC)
 engine for the centre-of-mass (COM) dynamics of an exciton in a moiré-scale potential
