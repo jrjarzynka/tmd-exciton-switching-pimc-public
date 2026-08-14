@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-import build_commensurate_moire as B
+import build_commensurate_moire_v3 as B
 
 
 M, N_IDX = 17, 16
