@@ -32,6 +32,20 @@ If the answer is DRIFTING, the result is not worthless -- it just has to be
 quoted differently, as a threshold at a stated observation time, the way a
 coercive field or a blocking temperature is quoted with its measurement rate.
 
+Per-carrier landscapes (v1.1)
+-----------------------------
+The electron and hole may be given independent registry amplitudes and dipole
+lengths; see tmd_pimc.landscape_config for the config conventions. Earlier
+versions built both from a single amplitude and a single dipole length, so the
+two landscapes differed only by the sign of the Stark term.
+
+This matters here in particular. Convergence in run length is one of two
+questions that must be settled before F_z,50 can be quoted; the other is
+whether its reported independence of V0 survives when the electron-hole
+symmetry of the model is removed. A threshold that converges beautifully in a
+symmetric model is still a threshold for that model. Both the banner and the
+CSV record which mode produced the number.
+
 Relation to the equilibrium runs
 --------------------------------
 Distinct from a landscape-resolution or bead-count convergence check. Those probe
@@ -69,6 +83,13 @@ from typing import Optional, Sequence
 
 import numpy as np
 
+from tmd_pimc.landscape_config import (
+    resolve_amplitudes,
+    resolve_dipole_lengths,
+    describe_landscape_config,
+    format_landscape_banner,
+)
+
 # Threshold on <rho^2> above which a seed counts as dissociated, in nm^2.
 # Matches the manuscript's classification threshold.
 DEFAULT_DISSOCIATION_THRESHOLD_NM2 = 30.0
@@ -90,7 +111,10 @@ def moire_minimum_nm(period_nm: float) -> tuple:
     threshold is meaningless. MoirePotential's own docstring warns about this.
 
     The minima of the three-cosine form sit at |r| = period / sqrt(3) along the
-    Cartesian axes, where every cosine equals -1/2.
+    Cartesian axes, where every cosine equals -1/2. The POSITION depends only on
+    the period, so it is common to both carriers even when their amplitudes
+    differ; only the depth in meV differs, which is why the start-height check
+    below is evaluated per carrier.
     """
     return (period_nm / math.sqrt(3.0), 0.0)
 
@@ -253,6 +277,9 @@ def run_point(
         TwoBodyPIMCSamplerStagingPeriodicJIT, pair_separations,
     )
 
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    dip_e, dip_h = resolve_dipole_lengths(cfg)
+
     zero = CompositePotential(terms=[])
     action = TwoBodyRingPolymerAction(
         mass_e_m0=cfg["mass_e_m0"], mass_h_m0=cfg["mass_h_m0"],
@@ -269,10 +296,12 @@ def run_point(
         sampler = TwoBodyPIMCSamplerStagingPeriodicJIT(
             action=action,
             moire_period_nm=cfg["moire_period_nm"],
-            moire_amplitude_eV=cfg["moire_amplitude_eV"],
+            moire_amplitude_e_eV=amp_e,
+            moire_amplitude_h_eV=amp_h,
             origin_h_nm=(shift_nm, 0.0),
             Fz_eV_per_nm=Fz,
-            dipole_length_nm=cfg["dipole_length_nm"],
+            dipole_length_e_nm=dip_e,
+            dipole_length_h_nm=dip_h,
             local_step_nm=cfg["local_step_nm"],
             global_step_nm=cfg["global_step_nm"],
             interaction_table_r_max_nm=interaction_r_max_nm,
@@ -372,26 +401,36 @@ def main(argv=None) -> int:
 
     seeds = list(range(args.seed_start, args.seed_start + args.n_seeds))
 
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    dip_e, dip_h = resolve_dipole_lengths(cfg)
+    desc = describe_landscape_config(cfg, Fz=max(args.fields))
+
     start = (tuple(args.start_nm) if args.start_nm is not None
              else moire_minimum_nm(cfg["moire_period_nm"]))
-    v_start = landscape_value_at(cfg["moire_period_nm"], cfg["moire_amplitude_eV"], start)
-    v_min = -1.5 * cfg["moire_amplitude_eV"] * 1000.0
-    above = v_start - v_min
 
     print(f"config                 : {args.config}")
-    print(f"  V0 (amplitude)       : {cfg['moire_amplitude_eV'] * 1000:.3f} meV")
-    print(f"  d_p                  : {cfg['dipole_length_nm']:.5f} nm")
+    print(format_landscape_banner(desc))
     print(f"  period / T / P       : {cfg['moire_period_nm']} nm / "
           f"{cfg['temperature_K']} K / {cfg['n_beads']}")
     print(f"  registry offset      : {args.shift_nm} nm")
     print(f"  dissociation at      : <rho^2> > {args.dissociation_threshold} nm^2")
     print(f"  seeds per point      : {len(seeds)}")
-    print(f"  start position       : ({start[0]:.4f}, {start[1]:.4f}) nm, "
-          f"{above:+.2f} meV above the landscape minimum")
-    if above > 0.25 * 4.5 * cfg["moire_amplitude_eV"] * 1000.0:
-        print("  [warning] the pair starts well above the landscape minimum. It "
-              "will slide downhill and separate for reasons unrelated to the "
-              "applied field, and the threshold will be meaningless.")
+    print(f"  start position       : ({start[0]:.4f}, {start[1]:.4f}) nm")
+
+    # The start-height check is evaluated per carrier: the position of the
+    # minimum is common (it depends only on the period) but its depth scales
+    # with each carrier's own amplitude, so a start that is harmlessly close to
+    # the minimum for one carrier can sit well up the hillside for the other.
+    for label, amp in (("electron", amp_e), ("hole", amp_h)):
+        v_start = landscape_value_at(cfg["moire_period_nm"], amp, start)
+        v_min = -1.5 * amp * 1000.0
+        above = v_start - v_min
+        print(f"    {label:8s}: {above:+.2f} meV above its landscape minimum")
+        if above > 0.25 * 4.5 * amp * 1000.0:
+            print(f"  [warning] the {label} starts well above its landscape "
+                  f"minimum. It will slide downhill and the pair will separate "
+                  f"for reasons unrelated to the applied field, making the "
+                  f"threshold meaningless.")
     print()
 
     rows: list[PointResult] = []
@@ -455,6 +494,13 @@ def main(argv=None) -> int:
         else:
             print("  F_z,50 is stable across the sweep.")
 
+    if vals and desc["landscape_symmetric"]:
+        print("\n  Convergence in run length is only one of the two conditions "
+              "for quoting F_z,50. This sweep used a SYMMETRIC landscape "
+              "(V0_e = V0_h, d_e = d_h), so it says nothing about whether the "
+              "threshold's reported independence of V0 survives removal of the "
+              "electron-hole symmetry. Repeat with the amplitudes decoupled.")
+
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", newline="") as fh:
@@ -470,7 +516,10 @@ def main(argv=None) -> int:
                         "rho2_per_seed", "rho2_seed_spread",
                         "max_separation_nm", "interaction_cutoff_nm",
                         "cutoff_ok", "acceptance_global", "psi0_sq",
-                        "moire_amplitude_eV", "dipole_length_nm",
+                        "moire_amplitude_e_eV", "moire_amplitude_h_eV",
+                        "amplitude_ratio_h_over_e",
+                        "dipole_length_e_nm", "dipole_length_h_nm",
+                        "landscape_symmetric",
                         "shift_nm", "dissociation_threshold_nm2"])
             for r in rows:
                 seed_vals = ";".join(f"{v:.6f}" for v in r.rho2_per_seed)
@@ -484,7 +533,8 @@ def main(argv=None) -> int:
                             r.interaction_cutoff_nm, int(r.cutoff_ok),
                             f"{r.acceptance_global:.6f}",
                             "" if r.psi0_sq is None else f"{r.psi0_sq:.8f}",
-                            cfg["moire_amplitude_eV"], cfg["dipole_length_nm"],
+                            amp_e, amp_h, desc["amplitude_ratio_h_over_e"],
+                            dip_e, dip_h, int(desc["landscape_symmetric"]),
                             args.shift_nm, args.dissociation_threshold])
         print(f"\nWrote {args.out}")
 

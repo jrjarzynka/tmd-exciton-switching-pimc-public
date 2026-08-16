@@ -2,12 +2,49 @@
 """
 Registry-offset scan for the coupled electron-hole two-body model.
 
-Electron landscape V_e is a MoirePotential pinned at the origin. Hole
-landscape V_h is the SAME MoirePotential (same amplitude/period), but
-rigidly shifted by shift_nm via ShiftedPotential (potential_helpers.py).
-This runner includes robustness improvements: per-seed exception handling,
-config validation, safer CSV writing (unified fieldnames), optional dry-run,
-and graceful handling of missing SciPy for minima detection.
+Landscapes
+----------
+The electron landscape V_e is a MoirePotential pinned at the origin; the
+hole landscape V_h is a MoirePotential rigidly shifted by shift_nm.
+
+As of v1.1 the two carriers may be given INDEPENDENT registry amplitudes
+and, when an out-of-plane field is applied, independent effective dipole
+lengths. Supply either
+
+    "moire_amplitude_eV": 0.04                     (shared, previous behaviour)
+
+or
+
+    "moire_amplitude_e_eV": 0.04,
+    "moire_amplitude_h_eV": 0.02                   (per carrier)
+
+and likewise "dipole_length_nm" or "dipole_length_e_nm"/"dipole_length_h_nm".
+The moire PERIOD is shared by construction: both carriers inhabit the same
+superlattice.
+
+Why this matters: with a single shared amplitude the model carries a
+residual symmetry between electron and hole, the only asymmetry being the
+registry offset and the mass ratio. Any conclusion that depends on the
+ABSENCE of electron-hole asymmetry -- for example a relocation threshold
+found to be independent of the landscape amplitude -- must be re-checked
+with the amplitudes decoupled before it can be called physical. Stage 0
+DFT for WSe2/MoSe2 indicates the two amplitudes are in fact different.
+
+Out-of-plane field
+------------------
+Setting "Fz_eV_per_nm" activates the per-carrier Stark coupling in the
+sampler (electron q_eff=-1, hole q_eff=+1, each anchored at its own
+registry origin). This is the mechanism by which the sign of Fz is
+expected to select between registry configurations; with Fz=0 the runner
+reproduces the pure-registry scan exactly.
+
+Every output row records which landscape mode produced it, so a result can
+be attributed to a symmetric or asymmetric model without re-reading the
+config.
+
+This runner includes per-seed exception handling, config validation, safer
+CSV writing (unified fieldnames), optional dry-run, and graceful handling
+of missing SciPy for minima detection.
 """
 
 from __future__ import annotations
@@ -58,6 +95,7 @@ except ImportError:
 # Unit conversion
 EV_TO_MEV = 1000.0
 
+
 REQUIRED_KEYS = [
     "separation_nm",
     "screening_length_layer1_nm",
@@ -67,9 +105,44 @@ REQUIRED_KEYS = [
     "mass_h_m0",
     "temperature_K",
     "n_beads",
-    "moire_amplitude_eV",
     "moire_period_nm",
 ]
+
+
+def resolve_per_carrier(
+    config: Dict[str, Any],
+    shared_key: str,
+    key_e: str,
+    key_h: str,
+    default: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Resolve a config value that may be given once or once per carrier.
+
+    Per-carrier keys take precedence over the shared key. If neither is
+    present and no default is supplied, raises rather than guessing.
+    """
+    shared = config.get(shared_key, default)
+    value_e = config.get(key_e, shared)
+    value_h = config.get(key_h, shared)
+    if value_e is None or value_h is None:
+        raise ValueError(
+            f"Config must supply either '{shared_key}' or both "
+            f"'{key_e}' and '{key_h}'"
+        )
+    return float(value_e), float(value_h)
+
+
+def resolve_amplitudes(config: Dict[str, Any]) -> Tuple[float, float]:
+    return resolve_per_carrier(
+        config, "moire_amplitude_eV", "moire_amplitude_e_eV", "moire_amplitude_h_eV"
+    )
+
+
+def resolve_dipole_lengths(config: Dict[str, Any]) -> Tuple[float, float]:
+    return resolve_per_carrier(
+        config, "dipole_length_nm", "dipole_length_e_nm", "dipole_length_h_nm",
+        default=0.05,
+    )
 
 
 def load_config(path: str) -> Dict[str, Any]:
@@ -78,6 +151,8 @@ def load_config(path: str) -> Dict[str, Any]:
     missing = [key for key in REQUIRED_KEYS if key not in config]
     if missing:
         raise ValueError(f"Config is missing required keys: {missing}")
+    # Amplitudes are required, but may arrive under either spelling.
+    resolve_amplitudes(config)
     return config
 
 
@@ -93,6 +168,14 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         raise ValueError("n_steps must be non-negative")
     if int(cfg.get("burn_in", 0)) < 0:
         raise ValueError("burn_in must be non-negative")
+
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    if amp_e <= 0.0 or amp_h <= 0.0:
+        raise ValueError("moire amplitudes must be > 0 for both carriers")
+
+    d_e, d_h = resolve_dipole_lengths(cfg)
+    if d_e < 0.0 or d_h < 0.0:
+        raise ValueError("dipole lengths must be non-negative")
 
 
 def build_interaction(config: Dict[str, Any]) -> BilayerKeldyshWallPotential:
@@ -125,8 +208,10 @@ def run_single_seed_shift(
             "JIT backend is required for this runner. Ensure Numba and two_body_sampler_jit are installed."
         )
 
-    amplitude = float(config["moire_amplitude_eV"])
+    amplitude_e, amplitude_h = resolve_amplitudes(config)
+    dipole_e, dipole_h = resolve_dipole_lengths(config)
     period = float(config["moire_period_nm"])
+    Fz = float(config.get("Fz_eV_per_nm", 0.0))
 
     # NOTE (2026-07-21 reorg): switched from rasterize-onto-finite-box
     # (TwoBodyPIMCSamplerStagingJIT, landscape_grid_range_nm=40 default) to
@@ -139,7 +224,14 @@ def run_single_seed_shift(
     # confines the interaction, which is intentional). Validated against
     # the already-established registry-scan reference (rho2=4.591-4.603
     # nm^2 at shift=0) before this runner was switched over.
-    V_e_potential = MoirePotential(amplitude_eV=amplitude, period_nm=period)  # kept for interaction.value() bookkeeping below only
+    #
+    # The action's potential_e/potential_h are NOT consumed by the JIT
+    # sampler, which rasterizes its own periodic-cell grids from the
+    # amplitude/period/origin arguments below. They are constructed here so
+    # that the action object remains a faithful description of the model
+    # for introspection and for any non-JIT cross-check.
+    V_e_potential = MoirePotential(amplitude_eV=amplitude_e, period_nm=period)
+    V_h_potential = MoirePotential(amplitude_eV=amplitude_h, period_nm=period)
 
     action = TwoBodyRingPolymerAction(
         mass_e_m0=float(config["mass_e_m0"]),
@@ -147,18 +239,25 @@ def run_single_seed_shift(
         temperature_K=float(config["temperature_K"]),
         n_beads=int(config["n_beads"]),
         potential_e=V_e_potential,
-        potential_h=ShiftedPotential(inner=V_e_potential, shift_nm=shift_nm),
+        potential_h=ShiftedPotential(inner=V_h_potential, shift_nm=shift_nm),
         potential_interaction=interaction,
     )
 
     sampler = TwoBodyPIMCSamplerStagingPeriodicJIT(
         action=action,
         moire_period_nm=period,
-        moire_amplitude_eV=amplitude,
+        moire_amplitude_e_eV=amplitude_e,
+        moire_amplitude_h_eV=amplitude_h,
         origin_e_nm=(0.0, 0.0),
         origin_h_nm=shift_nm,
         field_e_eV_per_nm=(0.0, 0.0),
         field_h_eV_per_nm=(0.0, 0.0),
+        Fz_eV_per_nm=Fz,
+        dipole_length_e_nm=dipole_e,
+        dipole_length_h_nm=dipole_h,
+        stark_period_nm=config.get("stark_period_nm"),
+        stark_phase_rad=float(config.get("stark_phase_rad", 0.0)),
+        stark_normalisation=config.get("stark_normalisation", "harmonic"),
         local_step_nm=float(config.get("local_step_nm", 0.15)),
         global_step_nm=float(config.get("global_step_nm", 12.0)),
         global_move_probability=float(config.get("global_move_probability", 0.2)),
@@ -169,6 +268,8 @@ def run_single_seed_shift(
         staging_moves_per_step=int(config.get("staging_moves_per_step", 2)),
         periodic_cell_grid_size=int(config.get("periodic_cell_grid_size", 200)),
     )
+
+    landscape = sampler.describe_landscape()
 
     # MoirePotential has a maximum at the origin; start both particles at a non-trivial offset
     start_offset = (period / (2.0 * np.sqrt(3.0)), 0.0)
@@ -215,6 +316,16 @@ def run_single_seed_shift(
         "acceptance_global_joint": result.get("acceptance_global_joint", float("nan")),
         "n_samples": result.get("n_samples", 0),
         "elapsed_s": elapsed_s,
+        # Landscape provenance -- recorded per row so that a result can
+        # never be misattributed to the wrong model.
+        "moire_amplitude_e_eV": landscape["moire_amplitude_e_eV"],
+        "moire_amplitude_h_eV": landscape["moire_amplitude_h_eV"],
+        "amplitude_ratio_h_over_e": landscape["amplitude_ratio_h_over_e"],
+        "dipole_length_e_nm": landscape["dipole_length_e_nm"],
+        "dipole_length_h_nm": landscape["dipole_length_h_nm"],
+        "Fz_eV_per_nm": landscape["Fz_eV_per_nm"],
+        "stark_active": landscape["stark_active"],
+        "landscape_symmetric": landscape["landscape_symmetric"],
     }
 
 
@@ -234,6 +345,11 @@ def detect_nearest_neighbor_spacing_nm(
     to differ by a factor of exactly sqrt(3) for this hexagonal landscape --
     an earlier version of this script conflated the two, incorrectly
     labelling this quantity "a full registry cycle").
+
+    The POSITIONS of the minima are set by the lattice geometry alone, so
+    this spacing is independent of amplitude_eV; the amplitude only scales
+    the depth. Passing either carrier's amplitude therefore gives the same
+    answer, and the electron's is used by convention in main().
     """
     try:
         from scipy.signal import find_peaks
@@ -266,8 +382,7 @@ def true_x_periodicity_nm(period_nm: float) -> float:
     purely along x. The smallest integer combination m*a1+n*a2 with zero
     y-component is (m,n)=(2,-1) (or (-2,1)), giving pure-x magnitude
     period_nm*sqrt(3) exactly. Verified numerically to machine precision
-    (max difference ~1e-16 eV over test points) on 2026-07-22; see
-    PROJECT_STATE handoff doc for the investigation that found this.
+    (max difference ~1e-16 eV over test points) on 2026-07-22.
     """
     return float(period_nm) * np.sqrt(3.0)
 
@@ -315,9 +430,31 @@ def main() -> None:
     interaction = build_interaction(config)
 
     period = float(config["moire_period_nm"])
-    amplitude = float(config["moire_amplitude_eV"])
+    amplitude_e, amplitude_h = resolve_amplitudes(config)
+    dipole_e, dipole_h = resolve_dipole_lengths(config)
+    Fz = float(config.get("Fz_eV_per_nm", 0.0))
+
+    symmetric = (amplitude_e == amplitude_h) and (dipole_e == dipole_h)
+    print(
+        f"Landscape mode: {'SYMMETRIC' if symmetric else 'ASYMMETRIC'}\n"
+        f"  moire amplitude  e={amplitude_e:.6g} eV   h={amplitude_h:.6g} eV"
+        f"   (ratio h/e = {amplitude_h / amplitude_e:.4g})\n"
+        f"  dipole length    e={dipole_e:.6g} nm   h={dipole_h:.6g} nm\n"
+        f"  Fz               {Fz:.6g} eV/nm"
+        f"   ({'Stark coupling ACTIVE' if Fz != 0.0 else 'pure registry scan'})",
+        file=sys.stderr,
+    )
+    if symmetric:
+        print(
+            "  NOTE: electron and hole see landscapes of identical amplitude and\n"
+            "  dipole length, differing only by the registry offset. Any result\n"
+            "  whose interpretation rests on the absence of electron-hole\n"
+            "  asymmetry should be re-run with the amplitudes decoupled.",
+            file=sys.stderr,
+        )
+
     try:
-        real_spacing_nm = detect_nearest_neighbor_spacing_nm(amplitude, period)
+        real_spacing_nm = detect_nearest_neighbor_spacing_nm(amplitude_e, period)
         true_period_nm = true_x_periodicity_nm(period)
         print(
             f"MoirePotential geometry check: period_nm={period} nm parameter.\n"
@@ -366,6 +503,10 @@ def main() -> None:
                     "shift_magnitude_nm": shift_mag,
                     "shift_x_nm": shift_nm[0],
                     "shift_y_nm": shift_nm[1],
+                    "moire_amplitude_e_eV": amplitude_e,
+                    "moire_amplitude_h_eV": amplitude_h,
+                    "landscape_symmetric": symmetric,
+                    "Fz_eV_per_nm": Fz,
                     "note": "dry_run",
                 })
                 if args.verbose:
@@ -427,6 +568,15 @@ def main() -> None:
             "sem_centroid_separation_nm": float(np.std(sep_values, ddof=1) / np.sqrt(n)) if n > 1 else 0.0,
             "mean_v_interaction_meV": mean_v_interaction,
             "mean_acceptance_global_joint": mean_accept_global,
+            # Landscape provenance, repeated on every summary row so the
+            # summary CSV is self-describing in isolation.
+            "moire_amplitude_e_eV": amplitude_e,
+            "moire_amplitude_h_eV": amplitude_h,
+            "amplitude_ratio_h_over_e": amplitude_h / amplitude_e,
+            "dipole_length_e_nm": dipole_e,
+            "dipole_length_h_nm": dipole_h,
+            "Fz_eV_per_nm": Fz,
+            "landscape_symmetric": symmetric,
         })
 
     summary_path = output_dir / f"{output_prefix}_summary.csv"
@@ -435,6 +585,12 @@ def main() -> None:
 
     # Print compact summary to stderr
     print("\n=== Summary (registry-offset scan) ===", file=sys.stderr)
+    print(
+        f"  landscape: {'symmetric' if symmetric else 'asymmetric'}"
+        f" (amplitude ratio h/e = {amplitude_h / amplitude_e:.4g}),"
+        f" Fz = {Fz:.6g} eV/nm",
+        file=sys.stderr,
+    )
     for row in summary_rows:
         print(
             f"  shift={row['shift_nm']:.3f} nm ({row['shift_fraction_of_real_spacing']:.3f} x real lattice): "
@@ -449,4 +605,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

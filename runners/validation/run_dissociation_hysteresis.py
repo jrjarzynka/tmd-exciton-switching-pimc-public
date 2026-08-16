@@ -44,6 +44,18 @@ control: agreeing branches show the choice of neighbour does not matter,
 disagreeing ones would indicate the sampler cannot rotate between equivalent
 separated configurations.
 
+Per-carrier landscapes (v1.1)
+-----------------------------
+The electron and hole may now be given independent registry amplitudes and
+independent effective dipole lengths; see tmd_pimc.landscape_config for the
+config conventions. Earlier versions of this script built both carriers'
+landscapes from one amplitude and one dipole length, so the two differed only
+by the sign of the Stark term. Under that symmetry any conclusion resting on
+the absence of electron-hole asymmetry -- including the observation that the
+switching field is independent of V0 -- may follow from the model rather than
+from the physics, and should be re-run with the amplitudes decoupled. The
+landscape mode is printed at startup and recorded in every output row.
+
 Traces
 ------
 sampler.run() already returns samples of shape (n_samples, P, 2), so rho^2 per
@@ -73,36 +85,18 @@ from typing import Optional, Sequence
 
 import numpy as np
 
+from tmd_pimc.landscape_config import (
+    resolve_amplitudes,
+    resolve_dipole_lengths,
+    describe_landscape_config,
+    format_landscape_banner,
+    landscape_provenance_row,
+    landscape_minima,
+)
+
 
 DEFAULT_THRESHOLD_NM2 = 30.0
 DEFAULT_BURN_IN_FRACTION = 0.25
-
-
-def landscape_minima(period_nm: float, amplitude_eV: float, dipole_nm: float,
-                     Fz: float, n_grid: int = 1201):
-    """Locate the electron and hole landscape minima on a grid.
-
-    Returned positions are used only to place the starting configurations, so
-    grid resolution of a few pm is ample. Separations are computed directly and
-    never minimum-imaged: the interaction is aperiodic, and reducing the
-    separation into one cell here would silently place the "separated" start at
-    the wrong distance.
-    """
-    G = 4.0 * math.pi / (math.sqrt(3.0) * period_nm)
-    Gs = [np.array([G, 0.0]),
-          np.array([-0.5 * G, math.sqrt(3.0) / 2.0 * G]),
-          np.array([-0.5 * G, -math.sqrt(3.0) / 2.0 * G])]
-
-    g = np.linspace(-period_nm, period_nm, n_grid)
-    X, Y = np.meshgrid(g, g, indexing="ij")
-    P = np.stack([X.ravel(), Y.ravel()], axis=1)
-
-    moire = amplitude_eV * sum(np.cos(P @ k) for k in Gs)
-    stark = sum(np.sin(P @ k) for k in Gs)
-
-    r_e = P[np.argmin(moire - Fz * dipole_nm * stark)]
-    r_h = P[np.argmin(moire + Fz * dipole_nm * stark)]
-    return tuple(r_e), tuple(r_h)
 
 
 def rotate_c3(r, k: int = 1):
@@ -114,8 +108,11 @@ def rotate_c3(r, k: int = 1):
 
 def starting_configurations(cfg: dict, Fz: float) -> dict:
     """The three initial conditions, as (center_e, center_h) pairs."""
-    r_e, r_h = landscape_minima(cfg["moire_period_nm"], cfg["moire_amplitude_eV"],
-                                cfg["dipole_length_nm"], max(Fz, 1e-6))
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    dip_e, dip_h = resolve_dipole_lengths(cfg)
+    r_e, r_h = landscape_minima(
+        cfg["moire_period_nm"], amp_e, amp_h, dip_e, dip_h, max(Fz, 1e-6)
+    )
     return {
         "bound": (r_h, r_h),
         "separated": (r_e, r_h),
@@ -174,7 +171,14 @@ def run_branch(cfg: dict, Fz: float, start, n_steps: int, seeds: Sequence[int],
         TwoBodyPIMCSamplerStagingPeriodicJIT, pair_separations,
     )
 
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    dip_e, dip_h = resolve_dipole_lengths(cfg)
+
     center_e, center_h = start
+    # The periodic JIT sampler rasterizes its own landscape grids from the
+    # amplitude/period/dipole arguments below; the action's one-body terms
+    # are deliberately empty here so the landscape is specified in exactly
+    # one place and cannot be double-counted.
     zero = CompositePotential(terms=[])
     action = TwoBodyRingPolymerAction(
         mass_e_m0=cfg["mass_e_m0"], mass_h_m0=cfg["mass_h_m0"],
@@ -191,9 +195,11 @@ def run_branch(cfg: dict, Fz: float, start, n_steps: int, seeds: Sequence[int],
         sampler = TwoBodyPIMCSamplerStagingPeriodicJIT(
             action=action,
             moire_period_nm=cfg["moire_period_nm"],
-            moire_amplitude_eV=cfg["moire_amplitude_eV"],
+            moire_amplitude_e_eV=amp_e,
+            moire_amplitude_h_eV=amp_h,
             Fz_eV_per_nm=Fz,
-            dipole_length_nm=cfg["dipole_length_nm"],
+            dipole_length_e_nm=dip_e,
+            dipole_length_h_nm=dip_h,
             local_step_nm=cfg["local_step_nm"],
             global_step_nm=cfg["global_step_nm"],
             interaction_table_r_max_nm=r_max_nm,
@@ -267,12 +273,17 @@ def main(argv=None) -> int:
         cfg = json.load(fh)
     seeds = list(range(args.seed_start, args.seed_start + args.n_seeds))
 
+    desc = describe_landscape_config(cfg, Fz=max(args.fields))
+    provenance = landscape_provenance_row(desc)
+
     print(f"config      : {args.config}")
-    print(f"  V0        : {cfg['moire_amplitude_eV'] * 1000:.3f} meV")
-    print(f"  d_p       : {cfg['dipole_length_nm']:.5f} nm")
+    print(format_landscape_banner(desc))
     print(f"  n_steps   : {args.n_steps}   seeds/branch: {len(seeds)}")
-    e0, h0 = landscape_minima(cfg["moire_period_nm"], cfg["moire_amplitude_eV"],
-                              cfg["dipole_length_nm"], max(args.fields))
+
+    amp_e, amp_h = resolve_amplitudes(cfg)
+    dip_e, dip_h = resolve_dipole_lengths(cfg)
+    e0, h0 = landscape_minima(cfg["moire_period_nm"], amp_e, amp_h,
+                              dip_e, dip_h, max(args.fields))
     print(f"  minima    : e ({e0[0]:.3f}, {e0[1]:.3f})  h ({h0[0]:.3f}, {h0[1]:.3f})"
           f"   separation {math.dist(e0, h0):.3f} nm\n")
 
@@ -298,7 +309,7 @@ def main(argv=None) -> int:
             if not r["cutoff_ok"]:
                 print(f"      [warning] separations reached {r['max_separation_nm']:.1f} nm "
                       f"against a {args.interaction_r_max_nm:.0f} nm table cutoff")
-            rows.append(dict(
+            row = dict(
                 Fz_eV_per_nm=Fz, branch=b, n_steps=args.n_steps, n_seeds=len(seeds),
                 fraction=r["fraction"],
                 rho2_per_seed=";".join(f"{v:.6f}" for v in r["rho2_per_seed"]),
@@ -308,7 +319,10 @@ def main(argv=None) -> int:
                 cutoff_ok=int(r["cutoff_ok"]),
                 acc_local_e=r["acceptance"]["local_e"],
                 acc_staging=r["acceptance"]["staging"],
-                acc_global=r["acceptance"]["global"]))
+                acc_global=r["acceptance"]["global"])
+            # Landscape provenance, minus Fz which this runner sweeps.
+            row.update({k: v for k, v in provenance.items() if k != "Fz_eV_per_nm"})
+            rows.append(row)
         print()
 
     print("=" * 72)
@@ -335,6 +349,11 @@ def main(argv=None) -> int:
         if xf is not None:
             print(f"  Branches cross at Fz = {xf:.3f} eV/nm -- the run-length-"
                   f"independent estimate of the equilibrium switching field.")
+            if desc["landscape_symmetric"]:
+                print("  This value was obtained with a SYMMETRIC landscape "
+                      "(V0_e = V0_h, d_e = d_h). Its independence of V0, if "
+                      "found, is not yet established as physical -- repeat with "
+                      "the amplitudes decoupled before interpreting it.")
 
         # the control that makes irreversibility falsifiable
         low = min(range(len(args.fields)), key=lambda i: args.fields[i])

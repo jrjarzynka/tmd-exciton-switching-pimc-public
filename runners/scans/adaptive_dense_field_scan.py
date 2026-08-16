@@ -13,6 +13,20 @@ niezależnie propagujące się ciała). To pole JEST periodyczne w tej samej
 sieci co landscape rejestru, więc zawija się tym samym, już zwalidowanym
 kernelem periodycznym -- bez potrzeby nowego kodu numerycznego.
 
+NOTE (v1.1): krajobrazy per nośnik
+----------------------------------
+Elektron i dziura mogą teraz mieć niezależne amplitudy rejestru i niezależne
+efektywne długości dipola; konwencje kluczy configu opisuje
+tmd_pimc.landscape_config. Wcześniej oba krajobrazy budowane były z jednej
+amplitudy i jednego dipola, więc różniły się wyłącznie znakiem członu Starka.
+
+Ma to znaczenie właśnie dla tego skryptu, bo to on wyznacza próg. Przy
+symetrycznym krajobrazie model niesie resztkową symetrię elektron-dziura, a
+zatem stwierdzenie, że próg nie zależy od V0, może wynikać z konstrukcji
+modelu, a nie z fizyki. Tryb krajobrazu jest wypisywany na starcie i
+zapisywany w każdym wierszu CSV -- także w wierszach zwracanych przez
+workery, żeby prowenancja przetrwała zrównoleglenie.
+
 Przepływ:
   1) Coarse scan: szeroki zakres Fz, mało seedów (szybkie).
   2) Lokalizacja okna przejścia (gdzie frakcja dysocjacji rośnie od ~p_low do ~p_high).
@@ -70,6 +84,14 @@ if _CODE_DIR not in sys.path:
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import binom
+
+from tmd_pimc.landscape_config import (
+    resolve_amplitudes,
+    resolve_dipole_lengths,
+    describe_landscape_config,
+    format_landscape_banner,
+    landscape_provenance_row,
+)
 
 
 # --- Helpery statystyczne ---------------------------------------------------
@@ -135,6 +157,24 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
         with open(config_path, "r") as f:
             config = json.load(f)
 
+        # Amplitudy i dlugosci dipola: wspolne albo per nosnik.
+        amplitude_e, amplitude_h = resolve_amplitudes(config)
+        dipole_e, dipole_h = resolve_dipole_lengths(config)
+        period = float(config["moire_period_nm"])
+
+        # Prowenancja krajobrazu dolaczana do KAZDEGO wiersza. Musi byc
+        # wyliczona tutaj, w workerze: proces glowny nie widzi obiektow
+        # zbudowanych po drugiej stronie ProcessPoolExecutor, a wynik bez
+        # prowenancji nie da sie pozniej przypisac do wlasciwego modelu.
+        out.update({
+            "moire_amplitude_e_eV": amplitude_e,
+            "moire_amplitude_h_eV": amplitude_h,
+            "amplitude_ratio_h_over_e": (amplitude_h / amplitude_e if amplitude_e != 0.0 else float("nan")),
+            "dipole_length_e_nm": dipole_e,
+            "dipole_length_h_nm": dipole_h,
+            "landscape_symmetric": (amplitude_e == amplitude_h) and (dipole_e == dipole_h),
+        })
+
         # Zbuduj interakcję BLK
         from tmd_pimc.bilayer_keldysh_potential import build_bilayer_keldysh_table, BilayerKeldyshWallPotential
         table = build_bilayer_keldysh_table(
@@ -162,13 +202,16 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
         # Potencjaly-placeholdery dla TwoBodyRingPolymerAction (wymaga
         # niepustych Potential2D, ale periodyczny sampler ich NIE czyta --
         # buduje wlasny, polaczony rejestr+Stark landscape wewnetrznie z
-        # moire_period_nm/moire_amplitude_eV/origin_*/Fz_eV_per_nm ponizej).
+        # moire_period_nm/moire_amplitude_*_eV/origin_*/Fz_eV_per_nm ponizej).
+        # Kazdy nosnik dostaje wlasna amplitude, zeby obiekt action pozostal
+        # wiernym opisem modelu przy introspekcji.
         from tmd_pimc.potentials import MoirePotential
         from tmd_pimc.potential_helpers import ShiftedPotential
-        amplitude = float(config["moire_amplitude_eV"])
-        period = float(config["moire_period_nm"])
-        V_e_placeholder = MoirePotential(amplitude_eV=amplitude, period_nm=period)
-        V_h_placeholder = ShiftedPotential(inner=MoirePotential(amplitude_eV=amplitude, period_nm=period), shift_nm=shift_nm)
+        V_e_placeholder = MoirePotential(amplitude_eV=amplitude_e, period_nm=period)
+        V_h_placeholder = ShiftedPotential(
+            inner=MoirePotential(amplitude_eV=amplitude_h, period_nm=period),
+            shift_nm=shift_nm,
+        )
 
         # Action
         from tmd_pimc.two_body_action import TwoBodyRingPolymerAction
@@ -204,15 +247,16 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
             )
 
         from tmd_pimc.two_body_sampler_periodic_jit import TwoBodyPIMCSamplerStagingPeriodicJIT
-        dipole_length_nm = float(config.get("dipole_length_nm", 0.05))
         sampler = TwoBodyPIMCSamplerStagingPeriodicJIT(
             action=action,
             moire_period_nm=period,
-            moire_amplitude_eV=amplitude,
+            moire_amplitude_e_eV=amplitude_e,
+            moire_amplitude_h_eV=amplitude_h,
             origin_e_nm=(0.0, 0.0),
             origin_h_nm=shift_nm,
             Fz_eV_per_nm=float(field_mag),
-            dipole_length_nm=dipole_length_nm,
+            dipole_length_e_nm=dipole_e,
+            dipole_length_h_nm=dipole_h,
             rng_seed=int(seed),
             local_step_nm=float(config.get("local_step_nm", 0.15)),
             global_step_nm=float(config.get("global_step_nm", 12.0)),
@@ -227,7 +271,6 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
         n_steps = int(config.get("n_steps", 60000))
         burn_in = int(config.get("burn_in", 15000))
         sample_every = int(config.get("sample_every", 20))
-        period = float(config["moire_period_nm"])
         start_offset = (period / (2.0 * math.sqrt(3.0)), 0.0)
 
         t0 = time.time()
@@ -294,6 +337,10 @@ def worker_run_point(args_tuple) -> Dict[str, Any]:
                                     "n_steps": n_steps,
                                     "burn_in": burn_in,
                                     "sample_every": sample_every,
+                                    "moire_amplitude_e_eV": amplitude_e,
+                                    "moire_amplitude_h_eV": amplitude_h,
+                                    "dipole_length_e_nm": dipole_e,
+                                    "dipole_length_h_nm": dipole_h,
                                 })
 
         out.update({
@@ -371,6 +418,16 @@ def main():
         base_cfg = json.load(f)
     shift_list = [float(v) for v in base_cfg.get("shift_values_nm", [0.0])]
 
+    # Tryb krajobrazu: wypisany raz, na starcie, zanim cokolwiek policzymy.
+    # Fz jest tu skanowane, wiec do banera podajemy gorny koniec zakresu.
+    desc = describe_landscape_config(base_cfg, Fz=args.field_max)
+    provenance = landscape_provenance_row(desc)
+    print(format_landscape_banner(desc))
+    if desc["landscape_symmetric"]:
+        print("  Prog wyznaczony w tym trybie nie rozstrzyga, czy niezaleznosc "
+              "od V0 jest fizyczna.")
+    print()
+
     # prepare coarse field grid
     field_vals_coarse = np.arange(args.field_min, args.field_max + 1e-12, args.coarse_step)
     print(f"Coarse grid: {len(field_vals_coarse)} fields, shifts: {len(shift_list)}")
@@ -397,6 +454,25 @@ def main():
                         parsed[k] = v
                 existing_results.append(parsed)
         print(f"Loaded {len(existing_results)} existing per-seed rows from checkpoint")
+
+        # Resume jest bezpieczny tylko wtedy, gdy checkpoint powstal na tym
+        # samym modelu. Mieszanie wynikow symetrycznych i asymetrycznych w
+        # jednym CSV dalo by prog policzony z dwoch roznych fizyk.
+        prior_modes = {r.get("landscape_symmetric") for r in existing_results
+                       if r.get("landscape_symmetric") is not None}
+        if prior_modes:
+            current = str(desc["landscape_symmetric"])
+            mismatched = {m for m in prior_modes if str(m) not in (current, current.lower())}
+            if mismatched:
+                raise SystemExit(
+                    f"Checkpoint w {per_seed_csv} zawiera wiersze z innym trybem "
+                    f"krajobrazu (landscape_symmetric={prior_modes}) niz obecny "
+                    f"config ({desc['landscape_symmetric']}). Uzyj innego "
+                    f"--output-dir zamiast --resume."
+                )
+        elif existing_results:
+            print("  [uwaga] checkpoint nie ma kolumn prowenancji -- pochodzi "
+                  "sprzed v1.1 i mogl powstac na innym modelu.", file=sys.stderr)
 
     # helper to check if (shift, field, seed) already done
     def already_done(shift, field, seed):
@@ -577,7 +653,7 @@ def main():
                         times_to_diss.append(t_steps)
             median_time = float(np.median(times_to_diss)) if times_to_diss else float("nan")
 
-            summary_rows.append({
+            row = {
                 "shift_nm": float(shift),
                 "field_eV_per_nm": float(field),
                 "n_seeds": n,
@@ -587,7 +663,12 @@ def main():
                 "dissoc_frac_ci_low": ci_low,
                 "dissoc_frac_ci_high": ci_high,
                 "median_time_to_diss_steps": median_time,
-            })
+            }
+            # Prowenancja krajobrazu takze w summary, zeby plik byl
+            # samoopisujacy sie w oderwaniu od per-seed CSV. Fz pomijamy:
+            # to jest tu zmienna skanowana, kolumna field_eV_per_nm.
+            row.update({k2: v2 for k2, v2 in provenance.items() if k2 != "Fz_eV_per_nm"})
+            summary_rows.append(row)
 
     # write summary CSV
     summary_csv = out_dir / "adaptive_summary.csv"
@@ -615,6 +696,9 @@ def main():
                          fmt='o-', label=f"shift={shift:.3f} nm")
         plt.xlabel("Field (eV/nm)")
         plt.ylabel("Dissociation fraction")
+        mode = "symmetric" if desc["landscape_symmetric"] else "asymmetric"
+        plt.title(f"V0_e={desc['moire_amplitude_e_eV'] * 1000:.1f} meV, "
+                  f"V0_h={desc['moire_amplitude_h_eV'] * 1000:.1f} meV ({mode})")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
