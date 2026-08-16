@@ -213,9 +213,15 @@ def main(argv=None) -> int:
         print(f"  W_10-90   = {'n/a' if w is None else f'{w:.1f}% of F_z,50'}")
         print(f"  dF_20-40  = {'n/a' if dsens is None else f'{dsens:.1f}% of F_z,50'}")
         acc = [p["acc"] for p in pts]
+        # NOTE: the warning is built before the f-string rather than inside it.
+        # A conditional expression spanning several lines within f-string braces
+        # is only valid from Python 3.12 (PEP 701); this project declares
+        # requires-python = ">=3.11", so the earlier form raised SyntaxError for
+        # anyone on 3.11 -- including a reviewer following the README.
+        acc_warning = ("   [warning] below 1%: basin-to-basin mixing is suppressed"
+                       if min(acc) < 0.01 else "")
         print(f"  global acceptance {min(acc) * 100:.2f}-{max(acc) * 100:.2f}%"
-              f"{'   [warning] below 1%: basin-to-basin mixing is suppressed'
-               if min(acc) < 0.01 else ''}")      
+              f"{acc_warning}")
         print()
 
     vals = [(n, t) for n, t in sorted(thresholds.items()) if t is not None]
