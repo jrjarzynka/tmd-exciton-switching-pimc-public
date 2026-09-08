@@ -219,12 +219,24 @@ def bilinear_interpolate_periodic_cell(
 
     fx = u * nx
     fy = v * ny
+
+    # Floating-point roundoff can map a tiny negative fractional coordinate
+    # to exactly 1.0 after ``u - floor(u)`` / ``v - floor(v)``.  In that
+    # case fx or fy is exactly N.  The old code reset only the integer index
+    # to zero and then formed wx = fx - ix, yielding a nonsensical weight N
+    # at the periodic seam.  Normalize the continuous grid coordinate first,
+    # then derive both the index and interpolation weight from the same value.
+    if fx >= nx:
+        fx = 0.0
+    if fy >= ny:
+        fy = 0.0
+    if fx < 0.0:
+        fx += nx
+    if fy < 0.0:
+        fy += ny
+
     ix = int(np.floor(fx))
     iy = int(np.floor(fy))
-    if ix >= nx:
-        ix = 0
-    if iy >= ny:
-        iy = 0
     wx = fx - ix
     wy = fy - iy
     ix1 = (ix + 1) % nx
