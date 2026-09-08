@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Sequence
 import numpy as np
+from .staging import free_bridge_proposal, segment_indices
 from .kernels_jit import (
     run_pimc_core_jit,
     run_pimc_core_jit_periodic_cell,
@@ -370,24 +371,14 @@ class PIMCSamplerStaging:
                 )
 
         start = int(self.rng.integers(0, P))
-        indices = (start + np.arange(L + 1, dtype=np.int64)) % P
+        indices = segment_indices(start, L, P)
         interior_indices = indices[1:-1]
-
         old_interior = np.asarray(path[interior_indices], dtype=float).copy()
-        new_interior = np.empty_like(old_interior)
-        previous = np.asarray(path[indices[0]], dtype=float).copy()
-        endpoint = np.asarray(path[indices[-1]], dtype=float)
-
-        # Conditional free-particle bridge.  For the next point, with R links
-        # remaining after it, variance = 2 lambda tau * R/(R+1).
-        for interior_offset in range(1, L):
-            remaining = L - interior_offset
-            denominator = remaining + 1.0
-            mean = (remaining * previous + endpoint) / denominator
-            variance = self._free_link_variance_nm2 * remaining / denominator
-            proposed_point = mean + np.sqrt(variance) * self.rng.standard_normal(2)
-            new_interior[interior_offset - 1] = proposed_point
-            previous = proposed_point
+        proposal = free_bridge_proposal(
+            path, start, L, self.rng.standard_normal((L - 1, 2)),
+            self._free_link_variance_nm2,
+        )
+        new_interior = proposal[interior_indices]
 
         old_V = float(np.sum(self.action.potential.value(old_interior)))
         new_V = float(np.sum(self.action.potential.value(new_interior)))

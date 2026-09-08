@@ -76,6 +76,7 @@ from .pair_observables import (
 )
 
 try:
+    from .sampler_staging_periodic_jit import PIMCSamplerStagingPeriodicJIT
     from .two_body_sampler_jit import TwoBodyPIMCSamplerStagingJIT
     from .two_body_sampler_periodic_jit import (
         TwoBodyPIMCSamplerStagingPeriodicJIT,
