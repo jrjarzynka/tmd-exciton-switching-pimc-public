@@ -43,6 +43,11 @@ STAGING_MOVES_PER_STEP = 1
 GLOBAL_SIGMA_NM = 15.0
 GLOBAL_PROBABILITY = 0.20
 WARMUP_SEED = 26_090_000
+SMOKE_SEED = 26_099_991
+SMOKE_N_STEPS = 2_000
+SMOKE_BURN_IN = 400
+SMOKE_SAMPLE_EVERY = 20
+SMOKE_EXPECTED_RETAINED = 80
 
 SCHEDULE = (
     {"T_K": 5.0, "P": 80, "L": 32},
@@ -81,10 +86,14 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def expected_retained_count() -> int:
-    if N_STEPS <= BURN_IN:
+def retained_count(n_steps: int, burn_in: int, sample_every: int) -> int:
+    if n_steps <= burn_in:
         return 0
-    return 1 + (N_STEPS - BURN_IN - 1) // SAMPLE_EVERY
+    return 1 + (n_steps - burn_in - 1) // sample_every
+
+
+def expected_retained_count() -> int:
+    return retained_count(N_STEPS, BURN_IN, SAMPLE_EVERY)
 
 
 def task_id(task: dict) -> str:
@@ -105,6 +114,20 @@ def build_inventory(schedule=SCHEDULE, seeds_by_t=SEEDS_BY_T) -> list[dict]:
 
 
 TASK_INVENTORY = build_inventory()
+
+SMOKE_TASK = {
+    "T_K": 20.0, "P": 32, "L": 16, "seed": SMOKE_SEED, "start_basin": "A",
+    "task_id": "SMOKE_T020_P032_L16_seed26099991_basinA",
+}
+PRODUCTION_RUN = {
+    "n_steps": N_STEPS, "burn_in": BURN_IN, "sample_every": SAMPLE_EVERY,
+    "expected_retained": EXPECTED_RETAINED, "production": True, "smoke_test": False,
+}
+SMOKE_RUN = {
+    "n_steps": SMOKE_N_STEPS, "burn_in": SMOKE_BURN_IN,
+    "sample_every": SMOKE_SAMPLE_EVERY, "expected_retained": SMOKE_EXPECTED_RETAINED,
+    "production": False, "smoke_test": True,
+}
 
 
 def _uses_forbidden_historical_seed(seed: int) -> bool:
@@ -213,6 +236,19 @@ def campaign_configuration() -> dict:
     }
 
 
+def chain_configuration(run_configuration: dict) -> dict:
+    configuration = campaign_configuration()
+    configuration.update({
+        "n_steps": run_configuration["n_steps"],
+        "burn_in": run_configuration["burn_in"],
+        "sample_every": run_configuration["sample_every"],
+        "expected_retained_per_chain": run_configuration["expected_retained"],
+        "production": bool(run_configuration["production"]),
+        "smoke_test": bool(run_configuration["smoke_test"]),
+    })
+    return configuration
+
+
 def preflight(grid_path: Path, output_path: Path, workers: int) -> dict:
     if not 4 <= workers <= 8:
         raise ValueError("--workers must be in the validated production range 4..8")
@@ -229,6 +265,29 @@ def preflight(grid_path: Path, output_path: Path, workers: int) -> dict:
         "task_count": len(TASK_INVENTORY),
         "expected_retained_total": len(TASK_INVENTORY) * EXPECTED_RETAINED,
         "task_inventory": TASK_INVENTORY, "source": source_provenance(),
+    }
+
+
+def smoke_preflight(grid_path: Path, output_path: Path, workers: int) -> dict:
+    if not 4 <= workers <= 8:
+        raise ValueError("--workers must be in the range 4..8")
+    validate_inventory()
+    production_seeds = {task["seed"] for task in TASK_INVENTORY}
+    if SMOKE_SEED in production_seeds or SMOKE_SEED == WARMUP_SEED:
+        raise ValueError("smoke seed overlaps a production or warm-up seed")
+    if not 2 <= SMOKE_TASK["L"] < SMOKE_TASK["P"]:
+        raise ValueError("smoke task must satisfy 2 <= L < P")
+    if retained_count(SMOKE_N_STEPS, SMOKE_BURN_IN, SMOKE_SAMPLE_EVERY) != SMOKE_EXPECTED_RETAINED:
+        raise ValueError("smoke sampling arithmetic does not retain exactly 80 paths")
+    validate_grid(grid_path)
+    validate_output_target(output_path)
+    return {
+        "status": "SMOKE_PREFLIGHT_OK", "production": False, "smoke_test": True,
+        "production_execution_started": False, "scientific_chains_planned": 1,
+        "grid": str(grid_path.resolve()), "grid_sha256": sha256_file(grid_path.resolve()),
+        "output": str(output_path.resolve()), "workers": workers,
+        "task": dict(SMOKE_TASK), "run_configuration": dict(SMOKE_RUN),
+        "production_inventory_included": False, "source": source_provenance(),
     }
 
 
@@ -348,7 +407,19 @@ def _write_json_exclusive(path: Path, payload: dict) -> None:
         stream.write("\n")
 
 
-def run_one(task: dict, grid_path: str, output_path: str, provenance: dict) -> dict:
+def chain_identity(task: dict, run_configuration: dict) -> dict:
+    smoke_test = bool(run_configuration["smoke_test"])
+    return {
+        "task_id": task["task_id"],
+        "classification": ("development_only_smoke_test" if smoke_test
+                           else "paper1_final_production"),
+        "production": bool(run_configuration["production"]),
+        "smoke_test": smoke_test,
+    }
+
+
+def run_one(task: dict, grid_path: str, output_path: str, provenance: dict,
+            run_configuration: dict = PRODUCTION_RUN) -> dict:
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         os.environ[name] = "1"
     grid_file, out = Path(grid_path), Path(output_path)
@@ -357,23 +428,28 @@ def run_one(task: dict, grid_path: str, output_path: str, provenance: dict) -> d
     matrix = np.column_stack([grid["lattice_vectors_nm"][0], grid["lattice_vectors_nm"][1]])
     center = grid["origin_nm"] + matrix @ BASIN_UV[task["start_basin"]]
 
-    # Compile on a disposable sampler.  Recreate with the untouched production
-    # seed before timing, exactly as in the validated moire pilot.
+    # Compile on a disposable sampler.  Recreate with the untouched chain seed
+    # before timing, exactly as in the validated moire pilot.
     warmup = make_sampler(action, task, WARMUP_SEED)
     warmup.run(n_steps=2, burn_in=0, sample_every=1, center=center)
     sampler = make_sampler(action, task, task["seed"])
     started = time.perf_counter()
-    result = sampler.run(N_STEPS, BURN_IN, SAMPLE_EVERY, center=center)
+    result = sampler.run(
+        run_configuration["n_steps"], run_configuration["burn_in"],
+        run_configuration["sample_every"], center=center,
+    )
     wall_seconds = time.perf_counter() - started
     samples = np.asarray(result["samples"])
-    if samples.shape != (EXPECTED_RETAINED, task["P"], 2):
+    expected_shape = (run_configuration["expected_retained"], task["P"], 2)
+    if samples.shape != expected_shape:
         raise RuntimeError(f"unexpected retained sample shape for {task['task_id']}: {samples.shape}")
     diag = diagnostics(samples, action, potential, grid, wall_seconds)
     attempts = np.asarray(result["staging_length_attempts"], dtype=np.int64)
     accepted = np.asarray(result["staging_length_accepted"], dtype=np.int64)
     metadata = {
-        "task_id": task["task_id"], "classification": "paper1_final_production",
-        "task": dict(task), "configuration": campaign_configuration(),
+        **chain_identity(task, run_configuration),
+        "task": dict(task), "configuration": chain_configuration(run_configuration),
+        "run_configuration": dict(run_configuration),
         "local_step_nm": local_step_nm(action), "wall_seconds": wall_seconds,
         "retained": int(len(samples)), "acceptance_local": float(result["acceptance_local"]),
         "acceptance_staging": float(result["acceptance_staging"]),
@@ -492,17 +568,34 @@ def execute_campaign(plan: dict, grid_path: Path, output_path: Path, workers: in
     _write_json_exclusive(output_path / "CAMPAIGN_COMPLETE.json", manifest)
 
 
+def execute_smoke_test(plan: dict, grid_path: Path, output_path: Path) -> dict:
+    if not output_path.exists():
+        output_path.mkdir(parents=True, exist_ok=False)
+    result = run_one(
+        SMOKE_TASK, str(grid_path), str(output_path), plan["source"], SMOKE_RUN,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False), flush=True)
+    return result
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--grid", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--preflight-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--preflight-only", action="store_true")
+    mode.add_argument("--smoke-test", action="store_true")
     return parser.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.smoke_test:
+        plan = smoke_preflight(args.grid, args.out, args.workers)
+        print(json.dumps(plan, indent=2, sort_keys=True, allow_nan=False), flush=True)
+        execute_smoke_test(plan, args.grid.resolve(), args.out.resolve())
+        return 0
     plan = preflight(args.grid, args.out, args.workers)
     print(json.dumps(plan, indent=2, sort_keys=True, allow_nan=False), flush=True)
     if args.preflight_only:

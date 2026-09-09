@@ -68,3 +68,31 @@ def test_grid_validation_checks_periodic_N400_contract(tmp_path):
 def test_preflight_rejects_worker_count_outside_production_range(tmp_path):
     with pytest.raises(ValueError, match="4..8"):
         runner.preflight(tmp_path / "not-used.npz", tmp_path / "out", workers=3)
+
+
+def test_smoke_configuration_is_separate_and_retains_80_paths():
+    production_seeds = {task["seed"] for task in runner.TASK_INVENTORY}
+    assert runner.SMOKE_SEED not in production_seeds
+    assert runner.SMOKE_SEED not in {seed for seeds in runner.SEEDS_BY_T.values() for seed in seeds}
+    assert runner.retained_count(
+        runner.SMOKE_N_STEPS, runner.SMOKE_BURN_IN, runner.SMOKE_SAMPLE_EVERY
+    ) == 80
+    assert runner.SMOKE_RUN["expected_retained"] == 80
+
+
+def test_smoke_and_preflight_modes_are_mutually_exclusive():
+    with pytest.raises(SystemExit):
+        runner.parse_args([
+            "--grid", "grid.npz", "--out", "out", "--preflight-only", "--smoke-test",
+        ])
+
+
+def test_smoke_identity_is_unambiguously_development_only():
+    identity = runner.chain_identity(runner.SMOKE_TASK, runner.SMOKE_RUN)
+    assert identity == {
+        "task_id": "SMOKE_T020_P032_L16_seed26099991_basinA",
+        "classification": "development_only_smoke_test",
+        "production": False,
+        "smoke_test": True,
+    }
+    assert runner.SMOKE_TASK not in runner.TASK_INVENTORY
