@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software or data, please cite the archived release and the associated article."
+title: "Finite-temperature COM PI-QMC of field-biased exciton relocation in moiré landscapes: reproducibility package"
+type: software
+authors:
+  - family-names: "Jarzynka"
+    given-names: "Jarosław R."
+    orcid: "https://orcid.org/0009-0005-9444-3973"
+repository-code: "https://github.com/jrjarzynka/tmd-exciton-switching-pimc-public"
+license: MIT
+version: "1.2"
+date-released: "2026-09-12"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21935778"
+    description: "Zenodo concept DOI (all versions)"
+keywords:
+  - moiré excitons
+  - path-integral Monte Carlo
+  - finite-temperature quantum statistics
+  - exciton delocalization
+  - transition-metal dichalcogenides

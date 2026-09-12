@@ -1,0 +1,7 @@
+PRB v1.2 release assets prepared 2026-09-12
+
+GitHub/source bundle:
+8232525bab8b125823eab22821a580e61d02457c73aead78706b6d9c7756f865  paper1_prb_confined_double_well_v1.2_source.zip
+
+Zenodo/full bundle (includes representative NPZ paths):
+4b7ae452b74aa1e6e6abb596539ba3eb36bc1564319af7d26c8d54ffd5a05b37  paper1_prb_confined_double_well_v1.2_zenodo.zip

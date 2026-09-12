@@ -6,14 +6,12 @@ than editing them in place.
 
 Scope
 -----
-Gradients are provided ONLY for the two potential classes used in the
-analytic validation sections of this work (HarmonicPotential,
-DoubleGaussianWellPotential) -- deliberately NOT for GridPotential2D,
-whose bilinear interpolation has a discontinuous gradient at cell
-boundaries (the same boundary that motivated the periodicity fix). Adding
-a numerical/finite-difference fallback there would risk masking real bugs
-rather than catching them, so unsupported potentials fail loudly instead
-of silently falling back to finite differences.
+Gradients are provided ONLY for explicitly supported analytic potential
+classes used in the validation sections of this work. GridPotential2D is
+deliberately NOT supported: its bilinear interpolation has a discontinuous
+gradient at cell boundaries (the same boundary that motivated the periodicity
+fix). Adding a numerical/finite-difference fallback there would risk masking
+real bugs rather than catching them, so unsupported potentials fail loudly.
 
 Formula
 -------
@@ -48,7 +46,13 @@ from __future__ import annotations
 import numpy as np
 
 from .constants import HBAR2_OVER_2M0, KB_EV_PER_K
-from .potentials import HarmonicPotential, DoubleGaussianWellPotential
+from .potentials import (
+    HarmonicPotential,
+    DoubleGaussianWellPotential,
+    SoftWallBoxPotential,
+    ExternalFieldPotential,
+    CompositePotential,
+)
 
 
 def potential_gradient(potential, r: np.ndarray) -> np.ndarray:
@@ -78,6 +82,24 @@ def potential_gradient(potential, r: np.ndarray) -> np.ndarray:
         c_left = potential.V0_eV / potential.sigma_nm ** 2
         c_right = right_depth / potential.sigma_nm ** 2
         return c_left * dl * f_left[:, None] + c_right * dr * f_right[:, None]
+
+    if isinstance(potential, SoftWallBoxPotential):
+        pwr = int(potential.power)
+        if pwr < 2:
+            raise ValueError("SoftWallBoxPotential.power must be >= 2 for this gradient")
+        r2 = np.einsum("ij,ij->i", r, r)
+        coeff = pwr * potential.V_wall0_eV / potential.R_box_nm ** pwr
+        radial_factor = np.ones_like(r2) if pwr == 2 else r2 ** ((pwr - 2) / 2.0)
+        return coeff * radial_factor[:, None] * r
+
+    if isinstance(potential, ExternalFieldPotential):
+        return np.broadcast_to(-potential.q_eff * potential._E, r.shape).copy()
+
+    if isinstance(potential, CompositePotential):
+        grad = np.zeros_like(r, dtype=float)
+        for term in potential.terms:
+            grad += potential_gradient(term, r)
+        return grad
 
     raise NotImplementedError(
         f"potential_gradient has no analytic implementation for "
