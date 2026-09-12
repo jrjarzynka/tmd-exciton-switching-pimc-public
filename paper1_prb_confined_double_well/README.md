@@ -12,7 +12,7 @@ V(X,Y)=V_{\rm dw}(X,Y)+0.08\,{\rm eV}\left(\frac{\sqrt{X^2+Y^2}}{25\,{\rm nm}}\r
 
 The eighth-power term is an auxiliary thermodynamic regulator. It is negligible in the two-well region but makes the canonical equilibrium problem normalizable and the linearly biased Hamiltonian bounded below. The primary relocation observable in the revised manuscript is the bead-averaged diagonal right-basin probability; centroid quantities are retained only as path diagnostics.
 
-GitHub contains the authoritative rerun source, deterministic audits, compact CSV reference outputs, regenerated figures, and revised TeX sources. The versioned Zenodo archive additionally carries the nine representative full-path NPZ files used for the filmstrip/path/free-energy figures. Production results use the generic tested `tmd_pimc.PIMCSamplerStaging`; `fast_staging.py` is retained only as an optional campaign-specific accelerator and is not the scientific authority for the reported reruns.
+GitHub contains the authoritative rerun source, deterministic audits, compact CSV reference outputs, and regenerated figures. The versioned Zenodo archive additionally carries the nine representative full-path NPZ files used for the filmstrip/path/free-energy figures. Production results use the generic tested `tmd_pimc.PIMCSamplerStaging`; `fast_staging.py` is retained only as an optional campaign-specific accelerator and is not the scientific authority for the reported reruns.
 
 ## Core numerical results
 
