@@ -12,6 +12,9 @@ version: "1.2.0"
 date-released: "2026-09-12"
 identifiers:
   - type: doi
+    value: "10.5281/zenodo.22728569"
+    description: "Zenodo DOI for release v1.2"
+  - type: doi
     value: "10.5281/zenodo.21935778"
     description: "Zenodo concept DOI (all versions)"
 keywords:

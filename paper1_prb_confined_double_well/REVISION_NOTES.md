@@ -50,4 +50,4 @@ Both revised TeX files were compiled twice after replacing figure inclusions by 
 
 ## One external submission gate
 
-The currently published GitHub/Zenodo release predates these confined-double-well reruns. The revised Data Availability statement therefore does **not** falsely claim that the new artifacts are already in that archive. Before pressing Submit, create a new versioned repository/archive release containing this package and replace the temporary Data Availability wording with the final release/DOI information. No additional scientific rerun is required for that gate.
+The reviewer-hardened repository state is prepared as release `v1.2`, and Zenodo version DOI `10.5281/zenodo.22728569` has been reserved. The Data Availability statement now cites that version-specific DOI and the all-versions concept DOI. Before pressing Submit, publish the prepared Zenodo draft and verify that the version DOI resolves publicly. No additional scientific rerun is required for this gate.

@@ -12,8 +12,8 @@ An archived, citable snapshot of this repository is available on Zenodo:
 [![DOI](https://zenodo.org/badge/1319565945.svg)](https://doi.org/10.5281/zenodo.21935778)
 
 The reviewer-hardened Paper-1 release is `v1.2` (package version `1.2.0`).
-The all-versions Zenodo concept DOI is [10.5281/zenodo.21935778](https://doi.org/10.5281/zenodo.21935778);
-the version-specific `v1.2` DOI is recorded in the manuscript after the new archive version is minted.
+The version-specific Zenodo DOI is [10.5281/zenodo.22728569](https://doi.org/10.5281/zenodo.22728569);
+the all-versions concept DOI is [10.5281/zenodo.21935778](https://doi.org/10.5281/zenodo.21935778).
 
 This repository implements and validates a Path-Integral Quantum Monte Carlo (PI-QMC)
 engine for the centre-of-mass (COM) dynamics of an exciton in a moiré-scale potential
