@@ -37,3 +37,6 @@ gsfe_scan_inputs_from_cloud/
 .venv312/
 CRASH
 future_work/atomistic_bridge_placeholder/stage0/
+# Local release staging and runtime logs (archival bundles are published separately)
+release/
+logs/

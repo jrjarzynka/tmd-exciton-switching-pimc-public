@@ -4,15 +4,16 @@
 
 Code and validation scripts accompanying:
 
-> J. R. Jarzynka, *Validated numerical-grid centre-of-mass Path-Integral Monte Carlo
-> for field-driven exciton-centroid relocation in moiré-scale landscapes*,
-> submitted to Computational Materials Science.
+> J. R. Jarzynka, *Finite-temperature centre-of-mass path-integral Monte Carlo
+> of field-biased exciton relocation and delocalization in moiré landscapes*,
+> prepared for submission to Physical Review B.
 
 An archived, citable snapshot of this repository is available on Zenodo:
 [![DOI](https://zenodo.org/badge/1319565945.svg)](https://doi.org/10.5281/zenodo.21935778)
 
-The version accompanying the submitted manuscript is `v1.0`,
-DOI [10.5281/zenodo.21935779](https://doi.org/10.5281/zenodo.21935779).
+The reviewer-hardened Paper-1 release is `v1.2` (package version `1.2.0`).
+The all-versions Zenodo concept DOI is [10.5281/zenodo.21935778](https://doi.org/10.5281/zenodo.21935778);
+the version-specific `v1.2` DOI is recorded in the manuscript after the new archive version is minted.
 
 This repository implements and validates a Path-Integral Quantum Monte Carlo (PI-QMC)
 engine for the centre-of-mass (COM) dynamics of an exciton in a moiré-scale potential
@@ -32,6 +33,20 @@ pip install -e .
 
 `pip install -e .` installs the `tmd_pimc` package (source in `numerics/tmd_pimc/`)
 in editable mode, so changes to the source are picked up without reinstalling.
+
+## Paper-1 v1.2 reviewer-hardening
+
+The current PRB revision replaces the formally unconfined field-biased finite double-Gaussian
+benchmark by the same local double well plus an auxiliary eighth-power radial regulator.
+The bead-averaged diagonal basin occupation is the primary relocation observable. The canonical
+confined reruns, deterministic audits, compact reference outputs, regenerated figures, and revised
+TeX sources are collected under `paper1_prb_confined_double_well/`; executable rerun scripts are in
+`runners/validation/prb_confined_double_well_r8/`. The historical unconfined double-well scripts
+remain in the repository for provenance but are superseded for all revised PRB double-well claims.
+
+The final primitive-cell production grid is tracked at
+`data/paper1_grid_pbc/GRID_PBC_PRIMITIVE_CELL_N0400.npz` with SHA-256
+`8fbd5d9a9e21c3f7b3655034bf044d396b37f1af8056ae64626fae783564dd65`.
 
 ## Project structure
 
